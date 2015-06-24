@@ -1,0 +1,8 @@
+#!/bin/bash
+clear
+cargo build --verbose
+
+if [ $? -eq 0 ]; then
+  echo "Build successful ====================================================="
+  ./rn
+fi
