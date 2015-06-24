@@ -2,3 +2,6 @@
 name = "GreyCrypt"
 version = "0.0.1"
 authors = [ "John Quigley <jmquigs@gmail.com>" ]
+
+[dependencies]
+toml = "0.1"

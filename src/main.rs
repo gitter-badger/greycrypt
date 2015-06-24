@@ -4,6 +4,11 @@ use std::fs::{self, PathExt};
 use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 
+extern crate toml;
+
+use std::fs::File;
+use std::io::Read;
+
 // From: https://doc.rust-lang.org/stable/std/fs/fn.read_dir.html
 // walk_dir unstable, avoiding it for now
 fn visit_dirs(dir: &Path, file_cb: &mut FnMut(&PathBuf)) -> io::Result<()> {
@@ -20,14 +25,11 @@ fn visit_dirs(dir: &Path, file_cb: &mut FnMut(&PathBuf)) -> io::Result<()> {
     Ok(())
 }
 
-fn main() {
-    println!("Welcome to the shit");
-
+fn start_sync() {
     let native_paths = vec![
         "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
         "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
-        "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
-        "C:\\Users\\John\\Documents\\GreyCryptTestFile.txt"];
+        "C:\\Users\\John\\Documents\\GreyCryptTestSrc"];
 
     // use hashset for path de-dup
     let mut native_files = HashSet::new();
@@ -59,4 +61,38 @@ fn main() {
     for nf in native_files {
         println!("native file: {}", nf);
     }
+}
+
+fn slurp_file(fname:&String) -> String {
+    // I can't believe that its really this terrible, but the example in the docs does not
+    // compile: http://doc.rust-lang.org/std/fs/struct.File.html
+    let mut f = File::open(fname);
+    match f {
+        Err(e) => { panic!("Can't open file: {}: {}", fname, e) } ,
+        Ok(f_h) => {
+            let mut f_h = f_h; // generates a warning, but without it, there is a borrow error in read_to_string below
+            let mut s = String::new();
+            let res = f_h.read_to_string(&mut s);
+            match res {
+                Err(e) => { panic!("Can't read file: {}: {}", fname, e) },
+                Ok(_) => s
+            }
+        }
+    }
+}
+
+fn parse_mappings() {
+    let toml = slurp_file(&"mapping.toml".to_string());
+    let res = toml::Parser::new(&toml).parse();
+    match res {
+        None => { panic!("Failed to parse mapping toml") }
+        Some(value) => { println!("{:?}", value); }
+    }
+}
+
+fn main() {
+    println!("Welcome to the shit");
+
+    parse_mappings();
+    start_sync();
 }
