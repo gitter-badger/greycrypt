@@ -50,7 +50,7 @@ struct SyncConfig {
 
 fn parse_config() -> SyncConfig {
     let toml = util::load_toml_file(&"mapping.toml".to_string());
-    
+
     // verify config
 
     // host name mapping must exist
