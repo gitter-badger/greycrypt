@@ -50,13 +50,7 @@ struct SyncConfig {
 
 fn parse_config() -> SyncConfig {
     let toml = util::load_toml_file(&"mapping.toml".to_string());
-
-    // TODO: sucky workaround for borrowing error; would like
-    // to just to use "toml" in the SyncConfig below, but accessing
-    // the map values seems to transfer ownership to those retrieved
-    // values
-    let raw_toml = util::load_toml_file(&"mapping.toml".to_string());
-
+    
     // verify config
 
     // host name mapping must exist
@@ -109,7 +103,7 @@ fn parse_config() -> SyncConfig {
     };
 
     let c = SyncConfig {
-        raw_toml: raw_toml,
+        raw_toml: toml.clone(),
         sync_dir: sync_dir
     };
 
