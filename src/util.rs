@@ -1,9 +1,13 @@
 use std::io;
 use std::fs::{self, PathExt};
 use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::process::Command;
 
 use std::fs::File;
 use std::io::Read;
+
+extern crate toml;
 
 // From: https://doc.rust-lang.org/stable/std/fs/fn.read_dir.html
 // walk_dir unstable, avoiding it for now
@@ -37,4 +41,23 @@ pub fn slurp_file(fname:&String) -> String {
             }
         }
     }
+}
+
+pub fn load_toml_file(filename:&String) -> BTreeMap<String, toml::Value> {
+    let toml = slurp_file(filename);
+    let res = toml::Parser::new(&toml).parse();
+    let toml = match res {
+        Some(value) => value,
+        None => { panic!("Failed to parse toml file: {}", filename) }
+    };
+
+    toml
+}
+
+pub fn get_hostname() -> String {
+    // no direct std function for this, as far as I can tell
+    let output = Command::new("hostname")
+                         .output()
+                         .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
