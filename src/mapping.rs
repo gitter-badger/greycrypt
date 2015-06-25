@@ -98,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_kw_reldir() {
+    fn test_get_kw_relpath() {
         let config = config::parse();
         let res = config.mapping.get_kw_relpath("C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt");
         match res {

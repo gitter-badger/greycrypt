@@ -6,6 +6,7 @@ use std::collections::HashSet;
 mod util;
 mod config;
 mod mapping;
+mod syncfile;
 
 fn start_sync() {
     let native_paths:Vec<&String> = vec![];
