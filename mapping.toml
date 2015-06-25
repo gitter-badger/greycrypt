@@ -13,3 +13,9 @@ SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
 
 [Machine_Descendent.Mapping]
 home = "C:\\Users\\John"
+
+[Machine_John-WinLaptop]
+SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
+
+[Machine_John-WinLaptop.Mapping]
+home = "C:\\Users\\John"
