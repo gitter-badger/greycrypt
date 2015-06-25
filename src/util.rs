@@ -61,3 +61,7 @@ pub fn get_hostname() -> String {
                          .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
+
+pub fn canon_path(p:String) -> String {
+    p.replace("\\","/").to_string()
+}

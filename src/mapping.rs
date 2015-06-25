@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::collections::BTreeMap;
+use std::path::{Path};
 
 extern crate toml;
+
+use util;
 
 pub struct Mapping {
     dir_to_keyword: HashMap<String,String>,
@@ -36,6 +39,46 @@ impl Mapping {
         }
         Ok(ret)
     }
+
+    pub fn lookup_kw(&self, nativedir: &str) -> Option<String> {
+        let nativedir = nativedir.to_uppercase();
+        let res = self.dir_to_keyword.get(&nativedir);
+        match res {
+            None => None,
+            Some (s) => Some(s.to_string())
+        }
+    }
+
+    pub fn get_kw_relpath(&self, nativefile: &str) -> Option<(String,String)> {
+        // walk nativepath directories backwards, looking for a mapping.
+        let mut walk = Path::new(nativefile).parent();
+        let mut res = None;
+
+        loop {
+            match walk {
+                None => break,
+                Some(p) => {
+                    let ps = p.to_str().unwrap();
+
+                    let kw = self.lookup_kw(ps);
+                    match kw {
+                        None => {
+                            walk = p.parent();
+                            continue
+                        }
+                        Some (kw) => {
+                            // find the relpath
+                            let relpath = nativefile[ps.len()..].to_string();
+                            res = Some((kw,util::canon_path(relpath)));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        res
+    }
 }
 
 #[cfg(test)]
@@ -51,5 +94,21 @@ mod tests {
         assert_eq!(config.mapping.keyword_to_dir.get("HOME").expect("No HOME key"), "C:\\Users\\John");
         assert_eq!(config.mapping.dir_to_keyword.get("C:\\USERS\\JOHN").expect("No dir key"), "HOME");
         assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
+    }
+
+    #[test]
+    fn test_get_kw_reldir() {
+        let config = config::parse();
+        let res = config.mapping.get_kw_relpath("C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt");
+        match res {
+            None => panic!("Expected a keyword and relpath"),
+            Some((kw,relpath)) => {
+                assert_eq!(kw, "HOME");
+                assert_eq!(relpath, "/Documents/GreyCryptTestSrc/Another file.txt");
+            }
+        }
+
+        let res = config.mapping.get_kw_relpath("C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt");
+        assert_eq!(res,None);
     }
 }
