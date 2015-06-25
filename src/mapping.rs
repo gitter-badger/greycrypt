@@ -40,16 +40,16 @@ impl Mapping {
         Ok(ret)
     }
 
-    pub fn lookup_kw(&self, nativedir: &str) -> Option<String> {
+    pub fn lookup_kw(&self, nativedir: &str) -> Option<&str> {
         let nativedir = nativedir.to_uppercase();
         let res = self.dir_to_keyword.get(&nativedir);
         match res {
             None => None,
-            Some (s) => Some(s.to_string())
+            Some (s) => Some(s)
         }
     }
 
-    pub fn get_kw_relpath(&self, nativefile: &str) -> Option<(String,String)> {
+    pub fn get_kw_relpath(&self, nativefile: &str) -> Option<(&str,String)> {
         // walk nativepath directories backwards, looking for a mapping.
         let mut walk = Path::new(nativefile).parent();
         let mut res = None;
@@ -68,8 +68,9 @@ impl Mapping {
                         }
                         Some (kw) => {
                             // find the relpath
-                            let relpath = nativefile[ps.len()..].to_string();
-                            res = Some((kw,util::canon_path(relpath)));
+                            let relpath = &nativefile[ps.len()..].to_string();
+                            let relpath = util::canon_path(relpath);
+                            res = Some((kw,relpath));
                             break;
                         }
                     }

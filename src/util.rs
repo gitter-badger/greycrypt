@@ -62,6 +62,7 @@ pub fn get_hostname() -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
-pub fn canon_path(p:String) -> String {
-    p.replace("\\","/").to_string()
+pub fn canon_path(p:&str) -> String {
+    let res = p.replace("\\","/").to_string();
+    res
 }
