@@ -9,8 +9,8 @@ use mapping;
 
 pub struct SyncConfig {
     raw_toml: BTreeMap<String, toml::Value>,
-    sync_dir: String,
-    mapping: mapping::Mapping
+    pub sync_dir: String,
+    pub mapping: mapping::Mapping
 }
 
 pub fn parse() -> SyncConfig {

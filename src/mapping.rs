@@ -37,3 +37,19 @@ impl Mapping {
         Ok(ret)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use config;
+
+    #[test]
+    fn parse_mapping() {
+        let config = config::parse();
+        assert_eq!(config.mapping.dir_to_keyword.len(), 1);
+        assert_eq!(config.mapping.keyword_to_dir.len(), 1);
+
+        assert_eq!(config.mapping.keyword_to_dir.get("HOME").expect("No HOME key"), "C:\\Users\\John");
+        assert_eq!(config.mapping.dir_to_keyword.get("C:\\USERS\\JOHN").expect("No dir key"), "HOME");
+        assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
+    }
+}
