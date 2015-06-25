@@ -12,4 +12,4 @@ NativePaths = [
 SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
 
 [Machine_Descendent.Mapping]
-john = "C:\\Users\\John"
+home = "C:\\Users\\John"

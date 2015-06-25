@@ -5,10 +5,12 @@ use std::fs::{PathExt};
 extern crate toml;
 
 use util;
+use mapping;
 
 pub struct SyncConfig {
     raw_toml: BTreeMap<String, toml::Value>,
-    sync_dir: String
+    sync_dir: String,
+    mapping: mapping::Mapping
 }
 
 pub fn parse() -> SyncConfig {
@@ -54,7 +56,12 @@ pub fn parse() -> SyncConfig {
                         } else {
                             println!("Found {} mapping entries for this host", map_count);
                         }
-                        m
+
+                        let mapping = mapping::Mapping::new(m);
+                        match mapping {
+                            Ok(m) => m,
+                            Err(msg) => panic!(msg)
+                        }
                     }
                 }
             }
@@ -67,7 +74,8 @@ pub fn parse() -> SyncConfig {
 
     let c = SyncConfig {
         raw_toml: toml.clone(),
-        sync_dir: sync_dir
+        sync_dir: sync_dir,
+        mapping: mapping
     };
 
     println!("SyncDir: {:?}", c.sync_dir);
