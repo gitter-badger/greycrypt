@@ -9,7 +9,8 @@ use mapping;
 
 pub struct SyncConfig {
     pub sync_dir: String,
-    pub mapping: mapping::Mapping
+    pub mapping: mapping::Mapping,
+    pub encryption_key: Option<[u8; 32]>
 }
 
 pub fn parse() -> SyncConfig {
@@ -73,7 +74,8 @@ pub fn parse() -> SyncConfig {
 
     let c = SyncConfig {
         sync_dir: sync_dir,
-        mapping: mapping
+        mapping: mapping,
+        encryption_key: None
     };
 
     println!("SyncDir: {:?}", c.sync_dir);

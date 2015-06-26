@@ -1,5 +1,7 @@
 extern crate uuid;
 extern crate crypto;
+extern crate rand;
+extern crate rustc_serialize;
 
 use util;
 use config;
@@ -7,17 +9,61 @@ use mapping;
 use std::path::{PathBuf};
 use std::fs::File;
 use std::io::Write;
+use std::io::Read;
 use std::result;
+use std::boxed;
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
+
+use self::crypto::{ symmetriccipher, buffer, aes, blockmodes };
+use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
+use self::rand::{ Rng, OsRng };
+use self::rustc_serialize::base64::{ToBase64, STANDARD};
 
 pub struct SyncFile {
     id: String,
     keyword: String,
     relpath: String,
     revguid: uuid::Uuid,
-    nativefile: String,
-    data: Option<Vec<u8>>
+    nativefile: String
+}
+
+struct EncryptHelper {
+    encryptor: Box<crypto::symmetriccipher::Encryptor>
+}
+
+impl EncryptHelper {
+    // don't get these arguments backwards ಠ_ಠ
+    pub fn new(key:&[u8], iv:&[u8]) -> EncryptHelper {
+        let encryptor = aes::cbc_encryptor(
+                aes::KeySize::KeySize256,
+                key,
+                iv,
+                blockmodes::PkcsPadding);
+        EncryptHelper {
+            encryptor: encryptor
+        }
+    }
+
+    pub fn encrypt(&mut self, data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+        let mut final_result = Vec::<u8>::new();
+        let mut read_buffer = buffer::RefReadBuffer::new(data);
+        let mut buffer = [0; 4096];
+        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
+
+        loop {
+            let result = try!(self.encryptor.encrypt(&mut read_buffer, &mut write_buffer, is_all_data));
+
+            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
+
+            match result {
+                BufferResult::BufferUnderflow => break,
+                BufferResult::BufferOverflow => { }
+            }
+        }
+
+        Ok(final_result)
+    }
 }
 
 impl SyncFile {
@@ -44,20 +90,13 @@ impl SyncFile {
             keyword: kw.to_string(),
             relpath: relpath,
             revguid: uuid::Uuid::new_v4(),
-            nativefile: nativefile.to_string(),
-            data: None
+            nativefile: nativefile.to_string()
         };
 
         Ok(ret)
     }
 
-    pub fn attach_data(&mut self) {
-        let data = util::slurp_bin_file(&self.nativefile);
-        // todo! encrypt
-        self.data = Some(data);
-    }
-
-    pub fn save(self, conf:&config::SyncConfig) -> Result<(),String> {
+    pub fn read_data_and_save(self, conf:&config::SyncConfig) -> Result<(),String> {
         let mut outpath = PathBuf::from(&conf.sync_dir);
         // note set_file_name will wipe out the last part of the path, which is a directory
         // in this case. LOLOL
@@ -65,17 +104,75 @@ impl SyncFile {
         outpath.set_extension("dat");
         println!("saving: {}",outpath.to_str().unwrap());
         let res = File::create(outpath.to_str().unwrap());
-        let mut f = match res {
+
+        let mut fout = match res {
             Err(e) => panic!("{:?}", e),
             Ok(f) => f
         };
-        let data = self.data.unwrap();
-        let res = f.write_all(&data);
+
+        let key = match conf.encryption_key {
+            None => panic!("No encryption key"),
+            Some(k) => k
+        };
+
+        // create random iv
+        let mut rng = OsRng::new().ok().unwrap();
+        let mut iv: [u8; 16] = [0; 16];
+        rng.fill_bytes(&mut iv);
+
+        // make encryptor
+        let key:&[u8] = &key;
+        let iv:&[u8] = &iv;
+        let mut encryptor = EncryptHelper::new(key,iv);
+
+        // write iv to file
+        let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
+
+        // write metadata (encrypted)
+        let mut v:Vec<u8> = Vec::new();
+        let md_format_ver = 1;
+        let _ = writeln!(v, "ver: {}", md_format_ver);
+        let _ = writeln!(v, "kw: {}", self.keyword);
+        let _ = writeln!(v, "relpath: {}", self.relpath);
+        let _ = writeln!(v, "revguid: {}", self.revguid);
+
+        let res = encryptor.encrypt(&v[..], false);
         match res {
-            Err(e) => panic!("{:?}", e),
-            Ok(_) => {
-                let _ = f.sync_all(); // TODO: use try!
-                ()
+            Err(e) => panic!("Encryption error: {:?}", e),
+            Ok(d) => {
+                let _ = writeln!(fout, "{}", d[..].to_base64(STANDARD));
+            }
+        }
+
+        // read, encrypt, and write file data, not slurping because it could be big
+        let mut fin = File::open(self.nativefile);
+        match fin {
+            Err(e) => { panic!("{}", e) },
+            Ok(fin) => {
+                let mut buf:[u8;65536] = [0; 65536];
+                let mut fin = fin;
+
+                loop {
+                    let read_res = fin.read(&mut buf);
+                    match read_res {
+                        Err(e) => { panic!("{}", e) },
+                        Ok(num_read) => {
+                            let enc_bytes = &buf[0 .. num_read];
+                            let eof = num_read == 0;
+                            let res = encryptor.encrypt(enc_bytes, eof);
+                            match res {
+                                Err(e) => panic!("Encryption error: {:?}", e),
+                                Ok(d) => {
+                                    let _ = fout.write(&d); // TODO: check result
+                                }
+                            }
+                            if eof {
+                                let _ = fout.sync_all(); // TODO: use try!
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -111,19 +208,20 @@ mod tests {
         match res {
             Err(m) => panic!(m),
             Ok(sf) => {
-                let mut sf = sf;
-                sf.attach_data();
-
                 let mut outpath = PathBuf::from(&wd);
                 outpath.push("testdata");
                 outpath.push("syncdir");
 
+                let ec: [u8;32] = [0; 32];
+
                 let conf = config::SyncConfig {
                     sync_dir: outpath.to_str().unwrap().to_string(),
-                    mapping: mapping
+                    mapping: mapping,
+                    encryption_key: Some(ec)
                 };
 
-                let res = sf.save(&conf);
+                let mut sf = sf;
+                let res = sf.read_data_and_save(&conf);
                 assert_eq!(res,Ok(()));
                 //assert!(false);
             }
