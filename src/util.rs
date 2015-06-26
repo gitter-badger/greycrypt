@@ -25,26 +25,55 @@ pub fn visit_dirs(dir: &Path, file_cb: &mut FnMut(&PathBuf)) -> io::Result<()> {
     Ok(())
 }
 
-pub fn slurp_file(fname:&String) -> String {
-    // I can't believe that its really this terrible, but the example in the docs does not
-    // compile: http://doc.rust-lang.org/std/fs/struct.File.html
+fn slurp_file<T,F>(fname:&str, slurper_fn: F ) -> T
+    where F: Fn(File) -> Result<T,String> {
     let mut f = File::open(fname);
     match f {
         Err(e) => { panic!("Can't open file: {}: {}", fname, e) } ,
         Ok(f_h) => {
-            let mut f_h = f_h; // generates a warning, but without it, there is a borrow error in read_to_string below
-            let mut s = String::new();
-            let res = f_h.read_to_string(&mut s);
+            let res = slurper_fn(f_h);
             match res {
                 Err(e) => { panic!("Can't read file: {}: {}", fname, e) },
-                Ok(_) => s
+                Ok(v) => v
             }
         }
     }
 }
 
+pub fn slurp_bin_file(fname:&str) -> Vec<u8> {
+    fn slurper (file:File) -> Result<Vec<u8>,String> {
+        // avoid borrow error, though it generates a warning saying mut isn't needed
+        let mut file = file;
+        let mut data:Vec<u8> = Vec::new();
+        let res = file.read_to_end(&mut data);
+        match res {
+            Err(e) => Err(format!("{:?}", e)),
+            Ok(len) => Ok(data) // drop length and just return data
+        }
+    }
+
+    let res = slurp_file(fname, slurper);
+    res
+}
+
+pub fn slurp_text_file(fname:&String) -> String {
+    fn slurper (file:File) -> Result<String,String> {
+        // avoid borrow error, though it generates a warning saying mut isn't needed
+        let mut file = file;
+        let mut s = String::new();
+        let res = file.read_to_string(&mut s);
+        match res {
+            Err(e) => Err(format!("{:?}", e)),
+            Ok(len) => Ok(s) // drop length and just return data
+        }
+    }
+
+    let res = slurp_file(fname, slurper);
+    res
+}
+
 pub fn load_toml_file(filename:&String) -> BTreeMap<String, toml::Value> {
-    let toml = slurp_file(filename);
+    let toml = slurp_text_file(filename);
     let res = toml::Parser::new(&toml).parse();
     let toml = match res {
         Some(value) => value,

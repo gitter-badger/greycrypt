@@ -8,7 +8,6 @@ use util;
 use mapping;
 
 pub struct SyncConfig {
-    raw_toml: BTreeMap<String, toml::Value>,
     pub sync_dir: String,
     pub mapping: mapping::Mapping
 }
@@ -73,7 +72,6 @@ pub fn parse() -> SyncConfig {
     };
 
     let c = SyncConfig {
-        raw_toml: toml.clone(),
         sync_dir: sync_dir,
         mapping: mapping
     };

@@ -6,3 +6,4 @@ authors = [ "John Quigley <jmquigs@gmail.com>" ]
 [dependencies]
 toml = "0.1"
 uuid = "0.1"
+rust-crypto = "0.2.31"

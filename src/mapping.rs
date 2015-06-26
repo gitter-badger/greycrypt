@@ -70,6 +70,7 @@ impl Mapping {
                             // find the relpath
                             let relpath = &nativefile[ps.len()..].to_string();
                             let relpath = util::canon_path(relpath);
+                            // TODO: validate that kw, relpath have non-zero length
                             res = Some((kw,relpath));
                             break;
                         }
