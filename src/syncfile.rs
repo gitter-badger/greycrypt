@@ -23,11 +23,10 @@ pub struct SyncFile {
 impl SyncFile {
     pub fn get_sync_id(kw: &str, relpath: &str) -> String {
         // make id from hash of kw + relpath
-        let idstr = kw.to_string() + &relpath.to_string().to_uppercase();
         let mut hasher = Sha256::new();
-        hasher.input_str(&idstr);
-        let hex = hasher.result_str();
-        hex
+        hasher.input_str(kw);
+        hasher.input_str(&relpath.to_uppercase());
+        hasher.result_str()
     }
 
     pub fn from_native(mapping: &mapping::Mapping, nativefile: &str) -> Result<SyncFile,String> {
