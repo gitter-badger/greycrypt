@@ -48,7 +48,7 @@ pub fn slurp_bin_file(fname:&str) -> Vec<u8> {
         let res = file.read_to_end(&mut data);
         match res {
             Err(e) => Err(format!("{:?}", e)),
-            Ok(len) => Ok(data) // drop length and just return data
+            Ok(_) => Ok(data) // drop length and just return data
         }
     }
 
@@ -64,7 +64,7 @@ pub fn slurp_text_file(fname:&String) -> String {
         let res = file.read_to_string(&mut s);
         match res {
             Err(e) => Err(format!("{:?}", e)),
-            Ok(len) => Ok(s) // drop length and just return data
+            Ok(_) => Ok(s) // drop length and just return data
         }
     }
 
