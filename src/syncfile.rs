@@ -145,32 +145,30 @@ impl SyncFile {
         }
 
         // read, encrypt, and write file data, not slurping because it could be big
-        let mut fin = File::open(self.nativefile);
-        match fin {
+        let mut fin = match File::open(self.nativefile) {
             Err(e) => { panic!("Can't open input native file: {}", e) },
-            Ok(fin) => {
-                let mut buf:[u8;65536] = [0; 65536];
-                let mut fin = fin;
+            Ok(fin) => fin
+        };
 
-                loop {
-                    let read_res = fin.read(&mut buf);
-                    match read_res {
-                        Err(e) => { panic!("Read error: {}", e) },
-                        Ok(num_read) => {
-                            let enc_bytes = &buf[0 .. num_read];
-                            let eof = num_read == 0;
-                            let res = encryptor.encrypt(enc_bytes, eof);
-                            match res {
-                                Err(e) => panic!("Encryption error: {:?}", e),
-                                Ok(d) => {
-                                    let _ = fout.write(&d); // TODO: check result
-                                }
-                            }
-                            if eof {
-                                let _ = fout.sync_all(); // TODO: use try!
-                                break;
-                            }
+        let mut buf:[u8;65536] = [0; 65536];
+
+        loop {
+            let read_res = fin.read(&mut buf);
+            match read_res {
+                Err(e) => { panic!("Read error: {}", e) },
+                Ok(num_read) => {
+                    let enc_bytes = &buf[0 .. num_read];
+                    let eof = num_read == 0;
+                    let res = encryptor.encrypt(enc_bytes, eof);
+                    match res {
+                        Err(e) => panic!("Encryption error: {:?}", e),
+                        Ok(d) => {
+                            let _ = fout.write(&d); // TODO: check result
                         }
+                    }
+                    if eof {
+                        let _ = fout.sync_all(); // TODO: use try!
+                        break;
                     }
                 }
             }
