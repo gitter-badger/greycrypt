@@ -125,10 +125,10 @@ impl SyncFile {
         let iv:&[u8] = &iv;
         let mut encryptor = EncryptHelper::new(key,iv);
 
-        // write iv to file
+        // write iv to file (unencrypted, base64 encoded)
         let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
 
-        // write metadata (encrypted)
+        // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
         let md_format_ver = 1;
         let _ = writeln!(v, "ver: {}", md_format_ver);
@@ -147,7 +147,7 @@ impl SyncFile {
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = File::open(self.nativefile);
         match fin {
-            Err(e) => { panic!("{}", e) },
+            Err(e) => { panic!("Can't open input native file: {}", e) },
             Ok(fin) => {
                 let mut buf:[u8;65536] = [0; 65536];
                 let mut fin = fin;
@@ -155,7 +155,7 @@ impl SyncFile {
                 loop {
                     let read_res = fin.read(&mut buf);
                     match read_res {
-                        Err(e) => { panic!("{}", e) },
+                        Err(e) => { panic!("Read error: {}", e) },
                         Ok(num_read) => {
                             let enc_bytes = &buf[0 .. num_read];
                             let eof = num_read == 0;
