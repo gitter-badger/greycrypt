@@ -105,7 +105,7 @@ impl SyncFile {
         let _ = writeln!(v, "revguid: {}", self.revguid);
     }
 
-    pub fn read_data_and_save(self, conf:&config::SyncConfig) -> Result<(),String> {
+    pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<(),String> {
         let mut outpath = PathBuf::from(&conf.sync_dir);
 
         if !outpath.is_dir() {
@@ -201,41 +201,51 @@ mod tests {
 
     extern crate toml;
 
-    #[test]
-    fn create_syncfile() {
+    fn get_config() -> config::SyncConfig {
         let wd = env::current_dir().unwrap();
 
-        // generate a mock mapping
+        // generate a mock mapping, with keyword "gcprojroot" mapped to the project's root dir
         let wds = wd.to_str();
         let mapping = format!("gcprojroot = '{}'", wds.unwrap());
         let mapping = toml::Parser::new(&mapping).parse().unwrap();
         let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
 
-        let mut testpath = PathBuf::from(&wd);
-        testpath.push("testdata");
-        testpath.push("test_native_file.txt");
+        let mut outpath = PathBuf::from(&wd);
+        outpath.push("testdata");
+        outpath.push("syncdir");
 
-        let res = syncfile::SyncFile::from_native(&mapping, testpath.to_str().unwrap());
+        let ec: [u8;32] = [0; 32];
+
+        let conf = config::SyncConfig {
+            sync_dir: outpath.to_str().unwrap().to_string(),
+            mapping: mapping,
+            encryption_key: Some(ec)
+        };
+        conf
+    }
+
+    fn test_create_syncfile(conf:&config::SyncConfig, testpath:&PathBuf) {
+        let res = syncfile::SyncFile::from_native(&conf.mapping, testpath.to_str().unwrap());
         match res {
             Err(m) => panic!(m),
             Ok(sf) => {
-                let mut outpath = PathBuf::from(&wd);
-                outpath.push("testdata");
-                outpath.push("syncdir");
-
-                let ec: [u8;32] = [0; 32];
-
-                let conf = config::SyncConfig {
-                    sync_dir: outpath.to_str().unwrap().to_string(),
-                    mapping: mapping,
-                    encryption_key: Some(ec)
-                };
-
-                let mut sf = sf;
-                let res = sf.read_data_and_save(&conf);
+                let res = sf.read_native_and_save(&conf);
                 assert_eq!(res,Ok(()));
                 //assert!(false);
             }
         }
+    }
+
+    #[test]
+    fn write_read_syncfile() {
+        let wd = env::current_dir().unwrap();
+        let mut testpath = PathBuf::from(&wd);
+        testpath.push("testdata");
+        testpath.push("test_native_file.txt");
+
+        let conf = get_config();
+
+        test_create_syncfile(&conf,&testpath);
+
     }
 }
