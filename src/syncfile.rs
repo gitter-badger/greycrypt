@@ -3,7 +3,6 @@ extern crate crypto;
 extern crate rand;
 extern crate rustc_serialize;
 
-use util;
 use config;
 use mapping;
 use std::path::{PathBuf};
@@ -11,8 +10,6 @@ use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
 use std::io::Write;
 use std::io::Read;
-use std::result;
-use std::boxed;
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
@@ -111,7 +108,7 @@ impl SyncFile {
         if !outpath.is_dir() {
             let res = create_dir_all(&outpath);
             match res {
-                Err(e) => panic!("Failed to create output sync directory: {:?}", outpath),
+                Err(e) => panic!("Failed to create output sync directory: {:?}: {:?}", outpath, e),
                 Ok(_) => ()
             }
         }
