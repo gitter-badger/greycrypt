@@ -7,7 +7,8 @@ use util;
 use config;
 use mapping;
 use std::path::{PathBuf};
-use std::fs::File;
+use std::fs::{File,create_dir_all};
+use std::fs::{PathExt};
 use std::io::Write;
 use std::io::Read;
 use std::result;
@@ -96,11 +97,27 @@ impl SyncFile {
         Ok(ret)
     }
 
+    fn pack_header(&self, v:&mut Vec<u8>) {
+        let md_format_ver = 1;
+        let _ = writeln!(v, "ver: {}", md_format_ver);
+        let _ = writeln!(v, "kw: {}", self.keyword);
+        let _ = writeln!(v, "relpath: {}", self.relpath);
+        let _ = writeln!(v, "revguid: {}", self.revguid);
+    }
+
     pub fn read_data_and_save(self, conf:&config::SyncConfig) -> Result<(),String> {
         let mut outpath = PathBuf::from(&conf.sync_dir);
+
+        if !outpath.is_dir() {
+            let res = create_dir_all(&outpath);
+            match res {
+                Err(e) => panic!("Failed to create output sync directory: {:?}", outpath),
+                Ok(_) => ()
+            }
+        }
         // note set_file_name will wipe out the last part of the path, which is a directory
         // in this case. LOLOL
-        outpath.push(self.id);
+        outpath.push(&self.id);
         outpath.set_extension("dat");
         println!("saving: {}",outpath.to_str().unwrap());
         let res = File::create(outpath.to_str().unwrap());
@@ -130,11 +147,7 @@ impl SyncFile {
 
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
-        let md_format_ver = 1;
-        let _ = writeln!(v, "ver: {}", md_format_ver);
-        let _ = writeln!(v, "kw: {}", self.keyword);
-        let _ = writeln!(v, "relpath: {}", self.relpath);
-        let _ = writeln!(v, "revguid: {}", self.revguid);
+        self.pack_header(&mut v);
 
         let res = encryptor.encrypt(&v[..], false);
         match res {
