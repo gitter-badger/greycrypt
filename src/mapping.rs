@@ -49,6 +49,12 @@ impl Mapping {
         }
     }
 
+    pub fn lookup_dir(&self, keyword: &str) -> Option<&String> {
+        let keyword = keyword.to_uppercase();
+        let res = self.keyword_to_dir.get(&keyword);
+        res
+    }
+
     pub fn get_kw_relpath(&self, nativefile: &str) -> Option<(&str,String)> {
         // walk nativepath directories backwards, looking for a mapping.
         let mut walk = Path::new(nativefile).parent();

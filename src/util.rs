@@ -95,3 +95,18 @@ pub fn canon_path(p:&str) -> String {
     let res = p.replace("\\","/").to_string();
     res
 }
+
+#[cfg(target_os = "windows")]
+fn fixpath(p:&str) -> String {
+    let res = p.replace("/","\\").to_string();
+    res
+}
+
+#[cfg(not(target_os = "windows"))]
+fn fixpath(p:&str) -> String {
+    str.to_string()
+}
+
+pub fn decanon_path(p:&str) -> String {
+    fixpath(p)
+}

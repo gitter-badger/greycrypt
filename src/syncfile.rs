@@ -3,6 +3,7 @@ extern crate crypto;
 extern crate rand;
 extern crate rustc_serialize;
 
+use util;
 use config;
 use mapping;
 use std::collections::HashMap;
@@ -18,12 +19,24 @@ use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::{ Rng, OsRng };
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
+const IVSize: usize = 16;
+
+struct OpenFileState {
+    handle: File,
+    //iv: &'a [u8]
+    iv: [u8;IVSize]
+}
+enum SyncFileState {
+    Closed,
+    Open(OpenFileState)
+}
 pub struct SyncFile {
     id: String,
     keyword: String,
     relpath: String,
     revguid: uuid::Uuid,
-    nativefile: String
+    nativefile: String,
+    sync_file_state: SyncFileState
 }
 
 struct CryptoHelper {
@@ -131,7 +144,8 @@ impl SyncFile {
             keyword: kw.to_string(),
             relpath: relpath,
             revguid: uuid::Uuid::new_v4(),
-            nativefile: nativefile.to_string()
+            nativefile: nativefile.to_string(),
+            sync_file_state: SyncFileState::Closed
         };
 
         Ok(ret)
@@ -158,20 +172,26 @@ impl SyncFile {
             Ok(fin) => fin
         };
 
-        let mut reader = BufReader::new(fin);
         let mut ivline = String::new();
-        match reader.read_line(&mut ivline) {
-            Err(e) => return Err(format!("Failed to read header line from syncfile: {:?}: {}", syncpath, e)),
-            Ok(_) => ()
-        }
         let mut mdline = String::new();
-        match reader.read_line(&mut mdline) {
-            Err(e) => return Err(format!("Failed to read metadata line from syncfile: {:?}: {}", syncpath, e)),
-            Ok(_) => ()
+
+        {
+            let mut reader = BufReader::new(&fin);
+
+            match reader.read_line(&mut ivline) {
+                Err(e) => return Err(format!("Failed to read header line from syncfile: {:?}: {}", syncpath, e)),
+                Ok(_) => ()
+            }
+            match reader.read_line(&mut mdline) {
+                Err(e) => return Err(format!("Failed to read metadata line from syncfile: {:?}: {}", syncpath, e)),
+                Ok(_) => ()
+            }
         }
 
         let iv = ivline.from_base64().unwrap();// TODO check error
-        let iv:&[u8] = &iv;
+        if (iv.len() != IVSize) {
+            return Err(format!("Unexpected IV length: {}", iv.len()));
+        }
 
         // make crypto helper
         let key:&[u8] = &key;
@@ -203,39 +223,91 @@ impl SyncFile {
             }
         }
 
-        let mut sf = SyncFile {
-            id: "".to_string(),
-            keyword: "".to_string(),
-            relpath: "".to_string(),
-            revguid: uuid::Uuid::new_v4(),
-            nativefile: "".to_string()
+        // build md map and parse md - a little tedious, but lets us error out if any of the
+        // values that we need are missing.
+        let mdmap = {
+            let mut mdmap:HashMap<String,String> = HashMap::new();
+            for l in md {
+                let parts:Vec<&str> = l.split(':').collect();
+                println!("{:?}",parts);
+                let k = parts[0].trim();
+                let v = parts[1].trim();
+                mdmap.insert(k.to_lowercase(),v.to_string());
+            }
+            mdmap
         };
 
-        let mdmap:HashMap<String,String> = HashMap::new();
-        for l in md {
-            let parts:Vec<&str> = l.split(':').collect();
-            println!("{:?}",parts);
-            let v = parts[1].trim();
-            match parts[0].trim() {
-                "kw" => sf.keyword = v.to_string(),
-                "relpath" => sf.relpath = v.to_string(),
-                "revguid" => {
+        let keyword:String = {
+            let v = mdmap.get("kw");
+            match v {
+                None => return Err(format!("Key 'kw' is required in metadata")),
+                Some(v) => v.to_string()
+            }
+        };
+        let relpath = {
+            let v = mdmap.get("relpath");
+            match v {
+                None => return Err(format!("Key 'relpath' is required in metadata")),
+                Some(v) => v.to_string()
+            }
+        };
+        let revguid = {
+            let v = mdmap.get("revguid");
+            match v {
+                None => return Err(format!("Key 'revguid' is required in metadata")),
+                Some(v) => {
                     match uuid::Uuid::parse_str(v) {
                         Err(e) => return Err(format!("Failed to parse uuid: {}: {:?}", v, e)),
-                        Ok(u) => sf.revguid = u
+                        Ok(u) => u
                     }
                 }
-                "ver" => (),
-                _ => return Err(format!("Unexpected metadata field: {}: {}", parts[0], v))
             }
+        };
 
+        // :(
+        // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
+        let mut iv_copy:[u8;IVSize] = [0;IVSize];
+        for i in 0..IVSize {
+            iv_copy[i] = iv[i]
         }
+        let ofs = OpenFileState {
+            handle: fin,
+            iv: iv_copy
+        };
 
-        // remake crypto helper for file data:
-        let mut crypto = CryptoHelper::new(key,iv);
+        let idstr = SyncFile::get_sync_id(&keyword,&relpath);
+
+        let mut sf = SyncFile {
+            id: idstr,
+            keyword: keyword,
+            relpath: relpath,
+            revguid: revguid,
+            nativefile: "".to_string(),
+            sync_file_state: SyncFileState::Open(ofs)
+        };
+
+        // try to set native file path; ignore failures for now, but we'll fail for real if
+        // we try to write it.
+        let _ = sf.set_nativefile_path(&conf);
 
         Ok(sf)
+    }
 
+    fn set_nativefile_path(&mut self, conf:&config::SyncConfig) -> Result<(),String> {
+        // use the keyword to find the base path in the mapping, then join with the relpath
+        let res = conf.mapping.lookup_dir(&self.keyword);
+        match res {
+            None => Err(format!("Keyword {} not found in mapping", &self.keyword)),
+            Some(dir) => {
+                let mut outpath = PathBuf::from(&dir);
+                // pathbuf will mess up unless we chop leading path sep, and join ()
+                // appears to do nothing...whatevs
+                let rp = &util::decanon_path(&self.relpath[1..]);
+                outpath.push(rp);
+                self.nativefile = outpath.to_str().unwrap().to_string();
+                Ok(())
+            }
+        }
     }
 
     fn pack_header(&self, v:&mut Vec<u8>) {
@@ -394,6 +466,8 @@ mod tests {
         testpath.push("testdata");
         testpath.push("test_native_file.txt");
 
+        let savetp = testpath.to_str().unwrap();
+
         let conf = get_config();
 
         let sfpath = create_syncfile(&conf,&testpath);
@@ -401,8 +475,26 @@ mod tests {
         let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
         match res {
             Err(e) => panic!("Error {:?}", e),
-            Ok(sf) => {}
+            Ok(sf) => {
+                let eid = syncfile::SyncFile::get_sync_id(&sf.keyword,&sf.relpath);
+                assert_eq!(eid,sf.id);
+                assert_eq!(sf.keyword, "GCPROJROOT");
+                assert_eq!(sf.relpath, "/testdata/test_native_file.txt");
+                // revguid could be anything, but if it wasn't a guid we would already have failed
+                assert_eq!(sf.nativefile, savetp);
+                // file should be open
+                match sf.sync_file_state {
+                    syncfile::SyncFileState::Open(ofs) => {
+                        // assume handle is valid (will check anyway when we read data)
+                        // iv should be non-null
+                        for x in 0..syncfile::IVSize {
+                            assert!(ofs.iv[x] != 0);
+                        }
+                    },
+                    _ => panic!("Unexpected file state")
+                }
+            }
         }
-        assert!(false);
+        //assert!(false);
     }
 }
