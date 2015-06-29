@@ -28,7 +28,9 @@ pub struct SyncFile {
 
 struct CryptoHelper {
     encryptor: Box<crypto::symmetriccipher::Encryptor>,
-    decryptor: Box<crypto::symmetriccipher::Decryptor>
+    got_eof_on_encrypt: bool,
+    decryptor: Box<crypto::symmetriccipher::Decryptor>,
+    got_eof_on_decrypt: bool
 }
 
 impl CryptoHelper {
@@ -46,11 +48,20 @@ impl CryptoHelper {
                 blockmodes::PkcsPadding);
         CryptoHelper {
             encryptor: encryptor,
-            decryptor: decryptor
+            decryptor: decryptor,
+            got_eof_on_encrypt: false,
+            got_eof_on_decrypt: false
         }
     }
 
     pub fn encrypt(&mut self, data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+        if self.got_eof_on_encrypt {
+            panic!("Already received encryption eof, can't encrypt anymore; reinit crypto helper");
+        }
+        if is_all_data {
+            self.got_eof_on_encrypt = true;
+        }
+
         let mut final_result = Vec::<u8>::new();
         let mut read_buffer = buffer::RefReadBuffer::new(data);
         let mut buffer = [0; 4096];
@@ -71,6 +82,13 @@ impl CryptoHelper {
     }
 
     pub fn decrypt(&mut self, encrypted_data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+        if self.got_eof_on_decrypt {
+            panic!("Already received decryption eof, can't decrypt anymore; reinit crypto helper");
+        }
+        if is_all_data {
+            self.got_eof_on_decrypt = true;
+        }
+
         let mut final_result = Vec::<u8>::new();
         let mut read_buffer = buffer::RefReadBuffer::new(encrypted_data);
         let mut buffer = [0; 4096];
@@ -155,7 +173,7 @@ impl SyncFile {
         let iv = ivline.from_base64().unwrap();// TODO check error
         let iv:&[u8] = &iv;
 
-        // make encryptor
+        // make crypto helper
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
         let mut crypto = CryptoHelper::new(key,iv);
@@ -166,7 +184,7 @@ impl SyncFile {
             Ok(md) => md
         };
 
-        let md = match crypto.decrypt(&md,false) {
+        let md = match crypto.decrypt(&md,true) {
             Err(e) => return Err(format!("Failed to decrypt meta data: {:?}", e)),
             Ok(md) => md
         };
@@ -212,6 +230,9 @@ impl SyncFile {
             }
 
         }
+
+        // remake crypto helper for file data:
+        let mut crypto = CryptoHelper::new(key,iv);
 
         Ok(sf)
 
@@ -261,7 +282,7 @@ impl SyncFile {
         // make encryptor
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
-        let mut encryptor = CryptoHelper::new(key,iv);
+        let mut crypto = CryptoHelper::new(key,iv);
 
         // write iv to file (unencrypted, base64 encoded)
         let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
@@ -270,13 +291,20 @@ impl SyncFile {
         let mut v:Vec<u8> = Vec::new();
         self.pack_header(&mut v);
 
-        let res = encryptor.encrypt(&v[..], false);
+        // pass true to signal EOF so that the metadata can be decrypted without needing to read
+        // the whole file.
+        let res = crypto.encrypt(&v[..], true);
+
         match res {
             Err(e) => panic!("Encryption error: {:?}", e),
             Ok(d) => {
-                let _ = writeln!(fout, "{}", d[..].to_base64(STANDARD));
+                let b64_out = d[..].to_base64(STANDARD);
+                let _ = writeln!(fout, "{}", b64_out);
             }
         }
+
+        // remake crypto helper for file data
+        let mut crypto = CryptoHelper::new(key,iv);
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(self.nativefile) {
@@ -293,7 +321,7 @@ impl SyncFile {
                 Ok(num_read) => {
                     let enc_bytes = &buf[0 .. num_read];
                     let eof = num_read == 0;
-                    let res = encryptor.encrypt(enc_bytes, eof);
+                    let res = crypto.encrypt(enc_bytes, eof);
                     match res {
                         Err(e) => panic!("Encryption error: {:?}", e),
                         Ok(d) => {
