@@ -15,7 +15,7 @@ use self::crypto::sha2::Sha256;
 use self::crypto::{ symmetriccipher, buffer, aes, blockmodes };
 use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::{ Rng, OsRng };
-use self::rustc_serialize::base64::{ToBase64, STANDARD};
+use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
 pub struct SyncFile {
     id: String,
@@ -25,20 +25,27 @@ pub struct SyncFile {
     nativefile: String
 }
 
-struct EncryptHelper {
-    encryptor: Box<crypto::symmetriccipher::Encryptor>
+struct CryptoHelper {
+    encryptor: Box<crypto::symmetriccipher::Encryptor>,
+    decryptor: Box<crypto::symmetriccipher::Decryptor>
 }
 
-impl EncryptHelper {
+impl CryptoHelper {
     // don't get these arguments backwards ಠ_ಠ
-    pub fn new(key:&[u8], iv:&[u8]) -> EncryptHelper {
+    pub fn new(key:&[u8], iv:&[u8]) -> CryptoHelper {
         let encryptor = aes::cbc_encryptor(
                 aes::KeySize::KeySize256,
                 key,
                 iv,
                 blockmodes::PkcsPadding);
-        EncryptHelper {
-            encryptor: encryptor
+        let mut decryptor = aes::cbc_decryptor(
+                aes::KeySize::KeySize256,
+                key,
+                iv,
+                blockmodes::PkcsPadding);
+        CryptoHelper {
+            encryptor: encryptor,
+            decryptor: decryptor
         }
     }
 
@@ -53,6 +60,24 @@ impl EncryptHelper {
 
             final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
 
+            match result {
+                BufferResult::BufferUnderflow => break,
+                BufferResult::BufferOverflow => { }
+            }
+        }
+
+        Ok(final_result)
+    }
+
+    pub fn decrypt(&mut self, encrypted_data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
+        let mut final_result = Vec::<u8>::new();
+        let mut read_buffer = buffer::RefReadBuffer::new(encrypted_data);
+        let mut buffer = [0; 4096];
+        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
+
+        loop {
+            let result = try!(self.decryptor.decrypt(&mut read_buffer, &mut write_buffer, is_all_data));
+            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
             match result {
                 BufferResult::BufferUnderflow => break,
                 BufferResult::BufferOverflow => { }
@@ -97,6 +122,10 @@ impl SyncFile {
         if !syncpath.is_file() {
             return Err(format!("Syncfile does not exist: {:?}", syncpath));
         }
+        let key = match conf.encryption_key {
+            None => panic!("No encryption key"),
+            Some(k) => k
+        };
 
         // read first two lines
         // first line is IV, need it to initialize encryptor
@@ -109,7 +138,7 @@ impl SyncFile {
             Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
-        
+
         let mut reader = BufReader::new(fin);
         let mut ivline = String::new();
         match reader.read_line(&mut ivline) {
@@ -122,7 +151,30 @@ impl SyncFile {
             Ok(_) => ()
         }
 
-        println!("xxxxxxxxxxxxx {}. {}", ivline, mdline);
+        let iv = ivline.from_base64().unwrap();// TODO check error
+        let iv:&[u8] = &iv;
+
+        // make encryptor
+        let key:&[u8] = &key;
+        let iv:&[u8] = &iv;
+        let mut crypto = CryptoHelper::new(key,iv);
+
+        let md = mdline.from_base64();
+        let md = match md {
+            Err(e) => return Err(format!("Failed to unpack metadata: error {:?}, line: {:?}", e, md)),
+            Ok(md) => md
+        };
+
+        let md = match crypto.decrypt(&md,false) {
+            Err(e) => return Err(format!("Failed to decrypt meta data: {:?}", e)),
+            Ok(md) => md
+        };
+        let md = String::from_utf8(md).unwrap();
+
+
+
+
+        println!("{:?}",md);
 
         Ok(SyncFile {
             id: "".to_string(),
@@ -178,7 +230,7 @@ impl SyncFile {
         // make encryptor
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
-        let mut encryptor = EncryptHelper::new(key,iv);
+        let mut encryptor = CryptoHelper::new(key,iv);
 
         // write iv to file (unencrypted, base64 encoded)
         let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
