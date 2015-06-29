@@ -5,6 +5,7 @@ extern crate rustc_serialize;
 
 use config;
 use mapping;
+use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
@@ -170,19 +171,49 @@ impl SyncFile {
             Ok(md) => md
         };
         let md = String::from_utf8(md).unwrap();
+        let md:Vec<&str> = md.lines().collect();
 
+        // first line should be version, check that
+        {
+            let verline = md[0];
+            let verparts:Vec<&str> = verline.split(":").collect();
+            if verparts[0].trim() != "ver" {
+                return Err(format!("expected first line of metadata to be file version, got: {:?}", verparts[0]));
+            }
+            if verparts[1].trim() != "1" { // lame
+                return Err(format!("unexpected file version, got: {:?}", verline));
+            }
+        }
 
-
-
-        println!("{:?}",md);
-
-        Ok(SyncFile {
+        let mut sf = SyncFile {
             id: "".to_string(),
             keyword: "".to_string(),
             relpath: "".to_string(),
             revguid: uuid::Uuid::new_v4(),
             nativefile: "".to_string()
-        })
+        };
+
+        let mdmap:HashMap<String,String> = HashMap::new();
+        for l in md {
+            let parts:Vec<&str> = l.split(':').collect();
+            println!("{:?}",parts);
+            let v = parts[1].trim();
+            match parts[0].trim() {
+                "kw" => sf.keyword = v.to_string(),
+                "relpath" => sf.relpath = v.to_string(),
+                "revguid" => {
+                    match uuid::Uuid::parse_str(v) {
+                        Err(e) => return Err(format!("Failed to parse uuid: {}: {:?}", v, e)),
+                        Ok(u) => sf.revguid = u
+                    }
+                }
+                "ver" => (),
+                _ => return Err(format!("Unexpected metadata field: {}: {}", parts[0], v))
+            }
+
+        }
+
+        Ok(sf)
 
     }
 
