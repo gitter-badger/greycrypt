@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
-use std::io::{Read, Write, BufReader, BufRead};
+use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek};
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
@@ -186,6 +186,17 @@ impl SyncFile {
                 Err(e) => return Err(format!("Failed to read metadata line from syncfile: {:?}: {}", syncpath, e)),
                 Ok(_) => ()
             }
+
+            // This seek is weird, but if we don't do it, we get a zero
+            // byte read when we try to read the file in restore_native() later on.
+            // Apparently this has the effect of repositioning the file at the unbuffered cursor
+            // position even though the buffered reader has already read a block of data.
+            // https://github.com/rust-lang/rust/blob/9cc0b2247509d61d6a246a5c5ad67f84b9a2d8b6/src/libstd/io/buffered.rs#L305
+            let res = reader.seek(SeekFrom::Current(0));
+            match res {
+                Err(e) => return Err(format!("Failed to seek reader after metadata: {:?}", e)),
+                Ok(_) => ()
+            }
         }
 
         let iv = ivline.from_base64().unwrap();// TODO check error
@@ -318,6 +329,74 @@ impl SyncFile {
         let _ = writeln!(v, "revguid: {}", self.revguid);
     }
 
+    pub fn restore_native(&self, conf:&config::SyncConfig) -> Result<String,String> {
+        let ofs = {
+            match self.sync_file_state {
+                SyncFileState::Open(ref ofs) => ofs,
+                _ => return Err("Sync file not open".to_string())
+            }
+        };
+        let key = match conf.encryption_key {
+            None => return Err("No encryption key".to_string()),
+            Some(k) => k
+        };
+
+        let outpath = match self.nativefile.trim() {
+            "" => return Err("Native path not set, call set_nativefile_path()".to_string()),
+            s => s
+        };
+
+        let mut outpath_par = PathBuf::from(&outpath);
+        let mut outpath_par = outpath_par.parent().unwrap();
+        if !outpath_par.is_dir() {
+            let res = create_dir_all(&outpath_par);
+            match res {
+                Err(e) => return Err(format!("Failed to create output directory: {:?}: {:?}", outpath_par, e)),
+                Ok(_) => ()
+            }
+        }
+
+        // make crypto helper
+        let key:&[u8] = &key;
+        let iv:&[u8] = &ofs.iv;
+        let mut crypto = CryptoHelper::new(key,iv);
+
+        // prep handles
+        let mut fin = &ofs.handle;
+
+        let res = File::create(outpath);
+        let mut fout = match res {
+            Err(e) => return Err(format!("Failed to create output file: {:?}: {:?}", outpath, e)),
+            Ok(f) => f
+        };
+
+        let mut buf:[u8;65536] = [0; 65536];
+
+        loop {
+            let read_res = fin.read(&mut buf);
+            match read_res {
+                Err(e) => { panic!("Read error: {}", e) },
+                Ok(num_read) => {
+                    let enc_bytes = &buf[0 .. num_read];
+                    let eof = num_read == 0;
+                    let res = crypto.decrypt(enc_bytes, eof);
+                    match res {
+                        Err(e) => panic!("Encryption error: {:?}", e),
+                        Ok(d) => {
+                            let _ = fout.write(&d); // TODO: check result
+                        }
+                    }
+                    if eof {
+                        let _ = fout.sync_all(); // TODO: use try!
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(outpath.to_string())
+    }
+
     pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<String,String> {
         let mut outpath = PathBuf::from(&conf.sync_dir);
         if !outpath.is_dir() {
@@ -416,6 +495,7 @@ impl SyncFile {
 mod tests {
     use std::env;
     use std::path::{PathBuf};
+    use util;
     use config;
     use mapping;
     use syncfile;
@@ -426,8 +506,8 @@ mod tests {
         let wd = env::current_dir().unwrap();
 
         // generate a mock mapping, with keyword "gcprojroot" mapped to the project's root dir
-        let wds = wd.to_str();
-        let mapping = format!("gcprojroot = '{}'", wds.unwrap());
+        let wds = wd.to_str().unwrap();
+        let mapping = format!("gcprojroot = '{}'", wds);
         let mapping = toml::Parser::new(&mapping).parse().unwrap();
         let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
 
@@ -468,7 +548,7 @@ mod tests {
 
         let savetp = testpath.to_str().unwrap();
 
-        let conf = get_config();
+        let mut conf = get_config();
 
         let sfpath = create_syncfile(&conf,&testpath);
         let sfpath = PathBuf::from(&sfpath);
@@ -484,15 +564,50 @@ mod tests {
                 assert_eq!(sf.nativefile, savetp);
                 // file should be open
                 match sf.sync_file_state {
-                    syncfile::SyncFileState::Open(ofs) => {
+                    syncfile::SyncFileState::Open(ref ofs) => {
                         // assume handle is valid (will check anyway when we read data)
                         // iv should be non-null
+                        let mut zcount = 0;
                         for x in 0..syncfile::IVSize {
-                            assert!(ofs.iv[x] != 0);
+                            if ofs.iv[x] == 0 { zcount = zcount + 1 }
                         }
+                        assert!(zcount != syncfile::IVSize)
                     },
                     _ => panic!("Unexpected file state")
                 }
+
+                // remap the keyword var to the "nativedir" under testdata
+                let wds = wd.to_str().unwrap();
+                let mut outpath = PathBuf::from(&wds);
+                outpath.push("testdata");
+                outpath.push("nativedir");
+
+                let mapping = format!("gcprojroot = '{}'", outpath.to_str().unwrap());
+                let mapping = toml::Parser::new(&mapping).parse().unwrap();
+                let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
+                conf.mapping = mapping;
+
+                // reset native path
+                let mut sf = sf;
+                sf.set_nativefile_path(&conf);
+                let res = sf.restore_native(&conf);
+                let outfile = {
+                    match res {
+                        Err(e) => panic!("Error {:?}", e),
+                        Ok(outfile) => {
+                            let mut ex_out = outpath.clone();
+                            ex_out.push("testdata");
+                            ex_out.push("test_native_file.txt");
+                            assert_eq!(outfile, ex_out.to_str().unwrap());
+                            outfile
+                        }
+                    }
+                };
+
+                // slurp source and output files and compare
+                let srctext = util::slurp_text_file(&savetp.to_string());
+                let outtext = util::slurp_text_file(&outfile);
+                assert_eq!(srctext,outtext);
             }
         }
         //assert!(false);
