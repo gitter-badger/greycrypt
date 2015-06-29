@@ -8,8 +8,7 @@ use mapping;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
-use std::io::Write;
-use std::io::Read;
+use std::io::{Read, Write, BufReader, BufRead};
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
@@ -94,6 +93,47 @@ impl SyncFile {
         Ok(ret)
     }
 
+    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
+        if !syncpath.is_file() {
+            return Err(format!("Syncfile does not exist: {:?}", syncpath));
+        }
+
+        // read first two lines
+        // first line is IV, need it to initialize encryptor
+        // use it to unpack/decrypt second line which is metadata
+        // set fields from metadata
+        // read file data from rest of file, decrypt, attach (ugh, may want stream it out, or save
+        // that phase for a separate step)
+
+        let mut fin = match File::open(syncpath.to_str().unwrap()) {
+            Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
+            Ok(fin) => fin
+        };
+        
+        let mut reader = BufReader::new(fin);
+        let mut ivline = String::new();
+        match reader.read_line(&mut ivline) {
+            Err(e) => return Err(format!("Failed to read header line from syncfile: {:?}: {}", syncpath, e)),
+            Ok(_) => ()
+        }
+        let mut mdline = String::new();
+        match reader.read_line(&mut mdline) {
+            Err(e) => return Err(format!("Failed to read metadata line from syncfile: {:?}: {}", syncpath, e)),
+            Ok(_) => ()
+        }
+
+        println!("xxxxxxxxxxxxx {}. {}", ivline, mdline);
+
+        Ok(SyncFile {
+            id: "".to_string(),
+            keyword: "".to_string(),
+            relpath: "".to_string(),
+            revguid: uuid::Uuid::new_v4(),
+            nativefile: "".to_string()
+        })
+
+    }
+
     fn pack_header(&self, v:&mut Vec<u8>) {
         let md_format_ver = 1;
         let _ = writeln!(v, "ver: {}", md_format_ver);
@@ -102,9 +142,8 @@ impl SyncFile {
         let _ = writeln!(v, "revguid: {}", self.revguid);
     }
 
-    pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<(),String> {
+    pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<String,String> {
         let mut outpath = PathBuf::from(&conf.sync_dir);
-
         if !outpath.is_dir() {
             let res = create_dir_all(&outpath);
             match res {
@@ -116,8 +155,10 @@ impl SyncFile {
         // in this case. LOLOL
         outpath.push(&self.id);
         outpath.set_extension("dat");
-        println!("saving: {}",outpath.to_str().unwrap());
-        let res = File::create(outpath.to_str().unwrap());
+
+        let outname = outpath.to_str().unwrap();
+        println!("saving: {}",outname);
+        let res = File::create(outname);
 
         let mut fout = match res {
             Err(e) => panic!("{:?}", e),
@@ -184,7 +225,7 @@ impl SyncFile {
             }
         }
 
-        Ok(())
+        Ok(outname.to_string())
     }
 }
 
@@ -221,20 +262,22 @@ mod tests {
         conf
     }
 
-    fn test_create_syncfile(conf:&config::SyncConfig, testpath:&PathBuf) {
+    fn create_syncfile(conf:&config::SyncConfig, testpath:&PathBuf) -> String {
         let res = syncfile::SyncFile::from_native(&conf.mapping, testpath.to_str().unwrap());
         match res {
             Err(m) => panic!(m),
             Ok(sf) => {
                 let res = sf.read_native_and_save(&conf);
-                assert_eq!(res,Ok(()));
-                //assert!(false);
+                match res {
+                    Err(e) => panic!("{}", e),
+                    Ok(sfpath) => sfpath
+                }
             }
         }
     }
 
     #[test]
-    fn write_read_syncfile() {
+    fn test_write_read_syncfile() {
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");
@@ -242,7 +285,13 @@ mod tests {
 
         let conf = get_config();
 
-        test_create_syncfile(&conf,&testpath);
-
+        let sfpath = create_syncfile(&conf,&testpath);
+        let sfpath = PathBuf::from(&sfpath);
+        let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
+        match res {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(sf) => {}
+        }
+        assert!(false);
     }
 }
