@@ -1,2 +1,3 @@
 target/
 compiletimes/
+testdata/out_syncdb/

@@ -31,10 +31,10 @@ enum SyncFileState {
     Open(OpenFileState)
 }
 pub struct SyncFile {
-    id: String,
-    keyword: String,
-    relpath: String,
-    revguid: uuid::Uuid,
+    pub id: String,
+    pub keyword: String,
+    pub relpath: String,
+    pub revguid: uuid::Uuid,
     nativefile: String,
     sync_file_state: SyncFileState
 }
@@ -437,7 +437,8 @@ mod tests {
         let conf = config::SyncConfig {
             sync_dir: outpath.to_str().unwrap().to_string(),
             mapping: mapping,
-            encryption_key: Some(ec)
+            encryption_key: Some(ec),
+            syncdb_dir: None
         };
         conf
     }
@@ -483,7 +484,8 @@ mod tests {
                 match sf.sync_file_state {
                     syncfile::SyncFileState::Open(ref ofs) => {
                         // assume handle is valid (will check anyway when we read data)
-                        // iv should be non-null
+                        // iv should be non-null (though its possible that it could
+                        // be randomly all zeros, that should be very rare)
                         let mut zcount = 0;
                         for x in 0..syncfile::IVSIZE {
                             if ofs.iv[x] == 0 { zcount = zcount + 1 }

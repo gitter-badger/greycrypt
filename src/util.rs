@@ -2,10 +2,16 @@ use std::io;
 use std::fs::{self, PathExt};
 use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::process::Command;
 
+use std::env;
 use std::fs::File;
 use std::io::Read;
+
+use std::fs::{metadata};
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
 
 extern crate toml;
 
@@ -96,6 +102,19 @@ pub fn canon_path(p:&str) -> String {
     res
 }
 
+// TODO: should just use serialization
+pub fn string_lines_to_hashmap(lines:Vec<&str>) -> HashMap<String,String> {
+    let mut hm:HashMap<String,String> = HashMap::new();
+    for l in lines {
+        // TODO: Actually, this should just split on the first ":"
+        let parts:Vec<&str> = l.split(':').collect();
+        let k = parts[0].trim();
+        let v = parts[1].trim();
+        hm.insert(k.to_lowercase(),v.to_string());
+    }
+    hm
+}
+
 #[cfg(target_os = "windows")]
 fn fixpath(p:&str) -> String {
     let res = p.replace("/","\\").to_string();
@@ -109,6 +128,20 @@ fn fixpath(p:&str) -> String {
 
 pub fn decanon_path(p:&str) -> String {
     fixpath(p)
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_file_mtime(path:&str) -> io::Result<u64> {
+    let md = try!(metadata(&path));
+    Ok(md.last_write_time())
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_appdata_dir() -> Option<String> {
+    match env::var("APPDATA") {
+        Err(_) => None,
+        Ok(v) => Some(v.to_string())
+    }
 }
 
 #[cfg(test)]

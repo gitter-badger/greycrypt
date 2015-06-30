@@ -8,6 +8,7 @@ mod config;
 mod mapping;
 mod syncfile;
 mod crypto_util;
+mod syncdb;
 
 fn start_sync() {
     let native_paths:Vec<&String> = vec![];
