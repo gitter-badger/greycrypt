@@ -430,7 +430,7 @@ mod tests {
 
         let mut outpath = PathBuf::from(&wd);
         outpath.push("testdata");
-        outpath.push("syncdir");
+        outpath.push("out_syncdir");
 
         let ec: [u8;32] = [0; 32];
 
@@ -499,7 +499,7 @@ mod tests {
                 let wds = wd.to_str().unwrap();
                 let mut outpath = PathBuf::from(&wds);
                 outpath.push("testdata");
-                outpath.push("nativedir");
+                outpath.push("out_nativedir");
 
                 let mapping = format!("gcprojroot = '{}'", outpath.to_str().unwrap());
                 let mapping = toml::Parser::new(&mapping).parse().unwrap();
