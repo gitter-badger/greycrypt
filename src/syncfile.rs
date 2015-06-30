@@ -19,12 +19,12 @@ use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::{ Rng, OsRng };
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
-const IVSize: usize = 16;
+const IVSIZE: usize = 16;
 
 struct OpenFileState {
     handle: File,
     //iv: &'a [u8]
-    iv: [u8;IVSize]
+    iv: [u8;IVSIZE]
 }
 enum SyncFileState {
     Closed,
@@ -54,7 +54,7 @@ impl CryptoHelper {
                 key,
                 iv,
                 blockmodes::PkcsPadding);
-        let mut decryptor = aes::cbc_decryptor(
+        let decryptor = aes::cbc_decryptor(
                 aes::KeySize::KeySize256,
                 key,
                 iv,
@@ -167,7 +167,7 @@ impl SyncFile {
         // read file data from rest of file, decrypt, attach (ugh, may want stream it out, or save
         // that phase for a separate step)
 
-        let mut fin = match File::open(syncpath.to_str().unwrap()) {
+        let fin = match File::open(syncpath.to_str().unwrap()) {
             Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
@@ -200,7 +200,7 @@ impl SyncFile {
         }
 
         let iv = ivline.from_base64().unwrap();// TODO check error
-        if (iv.len() != IVSize) {
+        if iv.len() != IVSIZE {
             return Err(format!("Unexpected IV length: {}", iv.len()));
         }
 
@@ -277,8 +277,8 @@ impl SyncFile {
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
-        let mut iv_copy:[u8;IVSize] = [0;IVSize];
-        for i in 0..IVSize {
+        let mut iv_copy:[u8;IVSIZE] = [0;IVSIZE];
+        for i in 0..IVSIZE {
             iv_copy[i] = iv[i]
         }
         let ofs = OpenFileState {
@@ -346,8 +346,8 @@ impl SyncFile {
             s => s
         };
 
-        let mut outpath_par = PathBuf::from(&outpath);
-        let mut outpath_par = outpath_par.parent().unwrap();
+        let outpath_par = PathBuf::from(&outpath);
+        let outpath_par = outpath_par.parent().unwrap();
         if !outpath_par.is_dir() {
             let res = create_dir_all(&outpath_par);
             match res {
@@ -568,10 +568,10 @@ mod tests {
                         // assume handle is valid (will check anyway when we read data)
                         // iv should be non-null
                         let mut zcount = 0;
-                        for x in 0..syncfile::IVSize {
+                        for x in 0..syncfile::IVSIZE {
                             if ofs.iv[x] == 0 { zcount = zcount + 1 }
                         }
-                        assert!(zcount != syncfile::IVSize)
+                        assert!(zcount != syncfile::IVSIZE)
                     },
                     _ => panic!("Unexpected file state")
                 }
@@ -589,7 +589,7 @@ mod tests {
 
                 // reset native path
                 let mut sf = sf;
-                sf.set_nativefile_path(&conf);
+                assert!(sf.set_nativefile_path(&conf).is_ok());
                 let res = sf.restore_native(&conf);
                 let outfile = {
                     match res {

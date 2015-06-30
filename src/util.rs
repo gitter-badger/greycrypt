@@ -27,7 +27,7 @@ pub fn visit_dirs(dir: &Path, file_cb: &mut FnMut(&PathBuf)) -> io::Result<()> {
 
 fn slurp_file<T,F>(fname:&str, slurper_fn: F ) -> T
     where F: Fn(File) -> Result<T,String> {
-    let mut f = File::open(fname);
+    let f = File::open(fname);
     match f {
         Err(e) => { panic!("Can't open file: {}: {}", fname, e) } ,
         Ok(f_h) => {
