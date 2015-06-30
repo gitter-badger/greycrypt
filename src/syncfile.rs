@@ -6,6 +6,8 @@ extern crate rustc_serialize;
 use util;
 use config;
 use mapping;
+use crypto_util;
+
 use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
@@ -14,8 +16,6 @@ use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek};
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
-use self::crypto::{ symmetriccipher, buffer, aes, blockmodes };
-use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
 use self::rand::{ Rng, OsRng };
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
@@ -37,87 +37,6 @@ pub struct SyncFile {
     revguid: uuid::Uuid,
     nativefile: String,
     sync_file_state: SyncFileState
-}
-
-struct CryptoHelper {
-    encryptor: Box<crypto::symmetriccipher::Encryptor>,
-    got_eof_on_encrypt: bool,
-    decryptor: Box<crypto::symmetriccipher::Decryptor>,
-    got_eof_on_decrypt: bool
-}
-
-impl CryptoHelper {
-    // don't get these arguments backwards ಠ_ಠ
-    pub fn new(key:&[u8], iv:&[u8]) -> CryptoHelper {
-        let encryptor = aes::cbc_encryptor(
-                aes::KeySize::KeySize256,
-                key,
-                iv,
-                blockmodes::PkcsPadding);
-        let decryptor = aes::cbc_decryptor(
-                aes::KeySize::KeySize256,
-                key,
-                iv,
-                blockmodes::PkcsPadding);
-        CryptoHelper {
-            encryptor: encryptor,
-            decryptor: decryptor,
-            got_eof_on_encrypt: false,
-            got_eof_on_decrypt: false
-        }
-    }
-
-    pub fn encrypt(&mut self, data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
-        if self.got_eof_on_encrypt {
-            panic!("Already received encryption eof, can't encrypt anymore; reinit crypto helper");
-        }
-        if is_all_data {
-            self.got_eof_on_encrypt = true;
-        }
-
-        let mut final_result = Vec::<u8>::new();
-        let mut read_buffer = buffer::RefReadBuffer::new(data);
-        let mut buffer = [0; 4096];
-        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-        loop {
-            let result = try!(self.encryptor.encrypt(&mut read_buffer, &mut write_buffer, is_all_data));
-
-            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
-
-            match result {
-                BufferResult::BufferUnderflow => break,
-                BufferResult::BufferOverflow => { }
-            }
-        }
-
-        Ok(final_result)
-    }
-
-    pub fn decrypt(&mut self, encrypted_data: &[u8], is_all_data:bool) -> Result<Vec<u8>, symmetriccipher::SymmetricCipherError> {
-        if self.got_eof_on_decrypt {
-            panic!("Already received decryption eof, can't decrypt anymore; reinit crypto helper");
-        }
-        if is_all_data {
-            self.got_eof_on_decrypt = true;
-        }
-
-        let mut final_result = Vec::<u8>::new();
-        let mut read_buffer = buffer::RefReadBuffer::new(encrypted_data);
-        let mut buffer = [0; 4096];
-        let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
-        loop {
-            let result = try!(self.decryptor.decrypt(&mut read_buffer, &mut write_buffer, is_all_data));
-            final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
-            match result {
-                BufferResult::BufferUnderflow => break,
-                BufferResult::BufferOverflow => { }
-            }
-        }
-
-        Ok(final_result)
-    }
 }
 
 impl SyncFile {
@@ -207,7 +126,7 @@ impl SyncFile {
         // make crypto helper
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
-        let mut crypto = CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         let md = mdline.from_base64();
         let md = match md {
@@ -358,7 +277,7 @@ impl SyncFile {
         // make crypto helper
         let key:&[u8] = &key;
         let iv:&[u8] = &ofs.iv;
-        let mut crypto = CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         // prep handles
         let mut fin = &ofs.handle;
@@ -428,10 +347,10 @@ impl SyncFile {
         let mut iv: [u8; 16] = [0; 16];
         rng.fill_bytes(&mut iv);
 
-        // make encryptor
+        // make crypto helper
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
-        let mut crypto = CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         // write iv to file (unencrypted, base64 encoded)
         let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
@@ -453,7 +372,7 @@ impl SyncFile {
         }
 
         // remake crypto helper for file data
-        let mut crypto = CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(self.nativefile) {
