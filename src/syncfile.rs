@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_read_syncfile() {
+    fn write_read_syncfile() {
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");

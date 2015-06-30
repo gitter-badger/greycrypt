@@ -56,7 +56,7 @@ pub fn slurp_bin_file(fname:&str) -> Vec<u8> {
     res
 }
 
-pub fn slurp_text_file(fname:&String) -> String {
+pub fn slurp_text_file(fname:&str) -> String {
     fn slurper (file:File) -> Result<String,String> {
         // avoid borrow error, though it generates a warning saying mut isn't needed
         let mut file = file;
@@ -72,7 +72,7 @@ pub fn slurp_text_file(fname:&String) -> String {
     res
 }
 
-pub fn load_toml_file(filename:&String) -> BTreeMap<String, toml::Value> {
+pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
     let toml = slurp_text_file(filename);
     let res = toml::Parser::new(&toml).parse();
     let toml = match res {
@@ -109,4 +109,26 @@ fn fixpath(p:&str) -> String {
 
 pub fn decanon_path(p:&str) -> String {
     fixpath(p)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::path::{PathBuf};
+    use util;
+
+    #[test]
+    fn file_slurp() {
+        let wd = env::current_dir().unwrap();
+        let mut testpath = PathBuf::from(&wd);
+        testpath.push("testdata");
+        testpath.push("test_native_file.txt");
+
+        let path = testpath.to_str().unwrap();
+        let srctext = util::slurp_text_file(path);
+        let bintext = util::slurp_bin_file(path);
+        let bin_to_text = String::from_utf8(bintext);
+        assert!(bin_to_text.is_ok());
+        assert_eq!(srctext, bin_to_text.unwrap());
+    }
 }
