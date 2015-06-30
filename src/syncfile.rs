@@ -240,7 +240,6 @@ impl SyncFile {
             let mut mdmap:HashMap<String,String> = HashMap::new();
             for l in md {
                 let parts:Vec<&str> = l.split(':').collect();
-                println!("{:?}",parts);
                 let k = parts[0].trim();
                 let v = parts[1].trim();
                 mdmap.insert(k.to_lowercase(),v.to_string());
@@ -412,7 +411,6 @@ impl SyncFile {
         outpath.set_extension("dat");
 
         let outname = outpath.to_str().unwrap();
-        println!("saving: {}",outname);
         let res = File::create(outname);
 
         let mut fout = match res {
@@ -610,6 +608,5 @@ mod tests {
                 assert_eq!(srctext,outtext);
             }
         }
-        //assert!(false);
     }
 }

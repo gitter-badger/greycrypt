@@ -1,3 +1,3 @@
 #!/bin/bash
 clear
-cargo test --verbose
+cargo test -- --nocapture

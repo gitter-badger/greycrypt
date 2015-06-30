@@ -53,10 +53,7 @@ pub fn parse() -> SyncConfig {
                         let map_count = m.len();
                         if map_count == 0 {
                             panic!("No mapping entries found for host");
-                        } else {
-                            println!("Found {} mapping entries for this host", map_count);
                         }
-
                         let mapping = mapping::Mapping::new(m);
                         match mapping {
                             Ok(m) => m,
@@ -78,6 +75,5 @@ pub fn parse() -> SyncConfig {
         encryption_key: None
     };
 
-    println!("SyncDir: {:?}", c.sync_dir);
     c
 }
