@@ -4,7 +4,7 @@
 
 #![feature(path_ext)]
 use std::fs::{PathExt};
-use std::path::{PathBuf};
+use std::path::{Path, PathBuf};
 use std::collections::HashSet;
 use std::collections::HashMap;
 
@@ -18,13 +18,14 @@ mod syncdb;
 struct SyncData {
     syncid: String,
     syncfile: PathBuf,
-    nativefile: PathBuf
+    nativefile: Option<PathBuf>
 }
 
 enum SyncAction {
     Nothing,
     CompareSyncState(SyncData),
-    UpdateSyncfile(SyncData)
+    UpdateSyncfile(SyncData),
+    CheckSyncRevguid(SyncData)
 }
 
 // These functions exist because I don't know how to create a new value type from a reference
@@ -32,10 +33,14 @@ enum SyncAction {
 // Its probably in the guide somewhere.
 // *X has something do with it, but can't use that here because its a move out of a borrowed context
 fn clone_syncdata(sd:&SyncData) -> SyncData {
+    let nf = match sd.nativefile {
+        None => None,
+        Some(ref path) => Some(path.clone())
+    };
     SyncData {
         syncid: sd.syncid.clone(),
         syncfile: sd.syncfile.clone(),
-        nativefile: sd.nativefile.clone()
+        nativefile: nf
     }
 }
 
@@ -44,6 +49,7 @@ fn clone_action(a:&SyncAction) -> SyncAction {
         SyncAction::Nothing => SyncAction::Nothing,
         SyncAction::CompareSyncState(ref sd) => SyncAction::CompareSyncState(clone_syncdata(sd)),
         SyncAction::UpdateSyncfile(ref sd) => SyncAction::UpdateSyncfile(clone_syncdata(sd)),
+        SyncAction::CheckSyncRevguid(ref sd) => SyncAction::CheckSyncRevguid(clone_syncdata(sd))
     }
 }
 
@@ -54,7 +60,11 @@ struct SyncState {
 
 fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     //println!("Comparing sync state on: {:?} and {:?}", sd.nativefile.file_name().unwrap(), sd.syncfile.file_name().unwrap());
-    let nativefile_str = sd.nativefile.to_str().unwrap();
+    let nativefile = match sd.nativefile {
+        None => panic!("Native file path must be set here"),
+        Some (ref pathbuf) => pathbuf
+    };
+    let nativefile_str = nativefile.to_str().unwrap();
 
     let native_mtime = match util::get_file_mtime(&nativefile_str) {
         Err(e) => panic!("Error getting file mtime: {:?}", e),
@@ -75,7 +85,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     match (revguid_changed,native_newer) {
         (true,true) => {
             // conflict! for now, panic
-            panic!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", sd.nativefile.file_name().unwrap(),
+            panic!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
                 sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
         },
         (true,false) => {
@@ -93,16 +103,20 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 }
 
 fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
-    println!("Copying native data in {:?} to {:?}", sd.nativefile.file_name().unwrap(), sd.syncfile.file_name().unwrap());
+    let nativefile = match sd.nativefile {
+        None => panic!("Native file path must be set here"),
+        Some (ref pathbuf) => pathbuf
+    };
+    let nativefile_str = nativefile.to_str().unwrap();
 
-    let nativefile_str = sd.nativefile.to_str().unwrap();
+    println!("Copying native data in {:?} to {:?}", nativefile_str, sd.syncfile.file_name().unwrap());
 
     let native_mtime = match util::get_file_mtime(&nativefile_str) {
         Err(e) => panic!("Error getting file mtime: {:?}", e),
         Ok(mtime) => mtime
     };
 
-    match syncfile::SyncFile::create_syncfile(&state.conf,&sd.nativefile) {
+    match syncfile::SyncFile::create_syncfile(&state.conf,&nativefile) {
         Err(e) => panic!("Error creating sync file: {:?}", e),
         Ok((ref sfpath,ref sf)) => {
             // update sync db
@@ -116,30 +130,82 @@ fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     SyncAction::Nothing
 }
 
+fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+    // found a sync file that has no corresponding native file.  So either:
+    // 1) this is a new sync file, created elsewhere, that hasn't been synced here yet, or
+    // 2) we deleted the file locally and this is a stale sync file that we should mark as deleted
+    // we can differentiate the cases by looking at the syncdb state for the sid.  If the revguid of the
+    // syncfile matches the db, we were the last ones to sync this file, so we can safely assume that it
+    // was deleted locally (case 2).  otherwise, its a new sync file that we should copy to native dir.
+    // NOTE: if we deleted the native file locally AND it was also changed on another machine, this
+    // algorithm means we'll consider the sync file to be new, and restore the native file here.  This is probably
+    // the safe option; if the user wants something deleted he should probably ensure that other systems
+    // aren't changing it.
+    if sd.nativefile != None {
+        // wat
+        panic!("Got check revguid action, but native file is set: {:?}", sd.nativefile);
+    }
+
+    //println!("Checking revguid on sid: {}",&sd.syncid);
+
+    let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+
+    let sync_entry = match state.syncdb.get(&sf) {
+        None => panic!("File should have an entry in syncdb, but does not: {:?}", &sd.syncfile),
+        Some(entry) => entry
+    };
+
+    if sf.revguid != sync_entry.revguid {
+        // new sync file
+        println!("New syncfile found, should create native: {:?}", &sd.syncid);
+    } else {
+        // local delete
+        println!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
+
+        // So, what we should do here is update the syncfile and set "Deleted", possibly with a
+        // deletion time, in its metadata.
+        // Other systems will need to handle that, both in CheckSyncRevguid and CompareSyncState.
+        // If a file is deleted, they should remove/recycle the native file.  Unfortunately, with this method,
+        // there is no way to know when everybody has processed the delete, so we have to leave the
+        // sync file out there as a marker indefinitely (we will expunge the encrypted data, so at least
+        // it small).  May want to implement some sort of time based garbage collection option.
+        // Or a delete count in the file so the user can see how many systems processed the delete in some
+        // kind of control panel.
+    }
+
+    SyncAction::Nothing
+}
+
 fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => clone_action(sa),
         SyncAction::CompareSyncState(ref sd) => compare_sync_state(state,sd),
+        SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
         SyncAction::UpdateSyncfile(_) => clone_action(sa), // don't do this in pass1
     }
 }
 fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => clone_action(sa),
-        SyncAction::CompareSyncState(ref sd) => panic!("Cannot compare sync state in this pass"),
+        SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
+        SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
         SyncAction::UpdateSyncfile(_) => clone_action(sa),
     }
 }
 fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => clone_action(sa),
-        SyncAction::CompareSyncState(ref sd) => panic!("Cannot compare sync state here"),
+        SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
+        SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
     }
 }
 
 fn do_sync(state:&mut SyncState) {
-    // use hashset for path de-dup
+    // use hashset for path de-dup (TODO: but what about case differences?)
     let mut native_files = HashSet::new();
 
     // ownership of hashset must be transferred to closure for the enumeration, so use scope
@@ -185,13 +251,60 @@ fn do_sync(state:&mut SyncState) {
             panic!("Unexpected error: action already present for file: {}", nf)
         }
 
-        let np = PathBuf::from(&nf);
+        let np = Some(PathBuf::from(&nf));
         let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: np };
         if syncfile.is_file() {
             actions.insert(sid.to_string(), SyncAction::CompareSyncState(sd));
         } else {
             actions.insert(sid.to_string(), SyncAction::UpdateSyncfile(sd));
         }
+    }
+
+    // scan sync files
+    let mut sync_files = HashSet::new();
+    {
+        let mut visitor = |pb: &PathBuf| {
+            sync_files.insert(pb.to_str().unwrap().to_string());
+        };
+
+        let d = &state.conf.sync_dir;
+        let dp = Path::new(d);
+        let res = util::visit_dirs(&dp, &mut visitor);
+        match res {
+            Ok(_) => (),
+            Err(e) => panic!("failed to scan directory: {}: {}", d, e),
+        }
+    }
+
+    for sf in &sync_files {
+        // sid is base filename without extension
+        // TODO: may need to revisit this, and store sid in directly in the file unencrypted.
+        // google drive renames files with suffixes like
+        // " (1)" when it gets confused.  That also creates dup sync files for the same native path,
+        // so will need to deal with that too.
+        let syncfile = PathBuf::from(sf);
+        let sid = syncfile.file_stem().unwrap().to_str().unwrap();
+
+        // if we already have a compare action pending for the file, we don't need to crack it
+        {
+            let action = actions.get(sid);
+            match action {
+                None => (),
+                Some(action) => {
+                    match *action {
+                        SyncAction::CompareSyncState(_) => continue, // skip
+                        SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
+                        SyncAction::Nothing => (),
+                        SyncAction::UpdateSyncfile(_) => ()
+                    }
+                }
+            }
+        }
+
+        // no action yet, so we did not scan a native file that maps to the same sid.  have to check
+        // revguids to see what to do.
+        let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: None };
+        actions.insert(sid.to_string(), SyncAction::CheckSyncRevguid(sd));
     }
 
     // TODO: use map() once I figure how to match on the struct references
