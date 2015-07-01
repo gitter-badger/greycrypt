@@ -25,6 +25,7 @@ enum SyncAction {
     Nothing,
     CompareSyncState(SyncData),
     UpdateSyncfile(SyncData),
+    CreateNewNativeFile(SyncData),
     CheckSyncRevguid(SyncData)
 }
 
@@ -49,7 +50,8 @@ fn clone_action(a:&SyncAction) -> SyncAction {
         SyncAction::Nothing => SyncAction::Nothing,
         SyncAction::CompareSyncState(ref sd) => SyncAction::CompareSyncState(clone_syncdata(sd)),
         SyncAction::UpdateSyncfile(ref sd) => SyncAction::UpdateSyncfile(clone_syncdata(sd)),
-        SyncAction::CheckSyncRevguid(ref sd) => SyncAction::CheckSyncRevguid(clone_syncdata(sd))
+        SyncAction::CheckSyncRevguid(ref sd) => SyncAction::CheckSyncRevguid(clone_syncdata(sd)),
+        SyncAction::CreateNewNativeFile(ref sd) => SyncAction::CreateNewNativeFile(clone_syncdata(sd))
     }
 }
 
@@ -160,7 +162,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     if sf.revguid != sync_entry.revguid {
         // new sync file
-        println!("New syncfile found, should create native: {:?}", &sd.syncid);
+        SyncAction::CreateNewNativeFile(clone_syncdata(sd))
     } else {
         // local delete
         println!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
@@ -174,8 +176,47 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         // it small).  May want to implement some sort of time based garbage collection option.
         // Or a delete count in the file so the user can see how many systems processed the delete in some
         // kind of control panel.
-    }
 
+        // for now, nothing.
+        SyncAction::Nothing
+    }
+}
+
+fn do_update_native_file(sf:&syncfile::SyncFile, state:&mut SyncState) {
+    let res = sf.restore_native(&state.conf);
+    let outfile = {
+        match res {
+            Err(e) => panic!("Error restoring native file: {:?}; {:?}", &sf.nativefile, e),
+            Ok(outfile) => {
+                // update syncdb
+                let native_mtime = match util::get_file_mtime(&sf.nativefile) {
+                    Err(e) => panic!("Error getting file mtime: {:?}", e),
+                    Ok(mtime) => mtime
+                };
+
+                match state.syncdb.update(sf,native_mtime) {
+                    Err(e) => panic!("Failed to update sync db: {:?}", e),
+                    Ok(_) => ()
+                }
+
+                println!("Wrote new file: {:?}", &sf.nativefile);
+            }
+        }
+    };
+}
+
+fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+    let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+
+    // find target native path, if it already exists...well thats a problem
+    let nativefile_path = PathBuf::from(&sf.nativefile);
+    if nativefile_path.is_file() {
+        panic!("Native path already exists for syncfile, refusing to overwrite: {}", &sf.nativefile);
+    }
+    do_update_native_file(&sf, state);
     SyncAction::Nothing
 }
 
@@ -185,6 +226,7 @@ fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::CompareSyncState(ref sd) => compare_sync_state(state,sd),
         SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
         SyncAction::UpdateSyncfile(_) => clone_action(sa), // don't do this in pass1
+        SyncAction::CreateNewNativeFile(_) => clone_action(sa)
     }
 }
 fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
@@ -193,6 +235,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
         SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
         SyncAction::UpdateSyncfile(_) => clone_action(sa),
+        SyncAction::CreateNewNativeFile(_) => clone_action(sa)
     }
 }
 fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
@@ -201,6 +244,7 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
         SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
+        SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd)
     }
 }
 
@@ -294,6 +338,7 @@ fn do_sync(state:&mut SyncState) {
                     match *action {
                         SyncAction::CompareSyncState(_) => continue, // skip
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
+                        SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
                         SyncAction::Nothing => (),
                         SyncAction::UpdateSyncfile(_) => ()
                     }

@@ -34,7 +34,7 @@ pub struct SyncFile {
     pub keyword: String,
     pub relpath: String,
     pub revguid: uuid::Uuid,
-    nativefile: String,
+    pub nativefile: String,
     sync_file_state: SyncFileState
 }
 
