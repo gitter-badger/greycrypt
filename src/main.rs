@@ -155,16 +155,18 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Ok(sf) => sf
     };
 
-    let sync_entry = match state.syncdb.get(&sf) {
-        None => panic!("File should have an entry in syncdb, but does not: {:?}", &sd.syncfile),
-        Some(entry) => entry
-    };
+    let sync_entry = state.syncdb.get(&sf);
 
-    if sf.revguid != sync_entry.revguid {
+    let new_sync_file = sync_entry.is_none() || sync_entry.unwrap().revguid != sf.revguid;
+
+    if new_sync_file {
         // new sync file
         SyncAction::CreateNewNativeFile(clone_syncdata(sd))
     } else {
         // local delete
+        // TODO: this can fire erroneously if this machine isn't actually resyncing
+        // the given native path; should handle that case (and maybe only unpack sync files
+        // in the first place if the unpack directory is keyword-mapped)
         println!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
 
         // So, what we should do here is update the syncfile and set "Deleted", possibly with a
@@ -304,10 +306,22 @@ fn do_sync(state:&mut SyncState) {
         }
     }
 
+    let sync_ext = "dat";
+
     // scan sync files
     let mut sync_files = HashSet::new();
     {
         let mut visitor = |pb: &PathBuf| {
+            match pb.extension() {
+                None => {
+                    return
+                }
+                Some(ext) => {
+                    if ext.to_str().unwrap() != sync_ext {
+                        return
+                    }
+                }
+            }
             sync_files.insert(pb.to_str().unwrap().to_string());
         };
 

@@ -1,12 +1,16 @@
 [General]
 # the absolute path prefix on these paths doesn't matter; as long
 # as there is a mapping for each path on this machine, it will work.
+# TODO: actually it doesn't quite work like this, paths have to be specified
+# explicitly
 NativePaths = [
   #"C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
   #"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
-  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir"
+  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir",
+  "/Users/john/Documents/AnotherGreyGryptTestDir",
+  "/Users/john/Documents/GreyCryptTestSrc"
   ]
 
 [Machine_Descendent]
