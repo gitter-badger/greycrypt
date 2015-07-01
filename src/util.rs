@@ -5,6 +5,9 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::process::Command;
 
+#[cfg(not(target_os = "windows"))]
+use std::os::unix::fs::MetadataExt;
+
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -123,7 +126,7 @@ fn fixpath(p:&str) -> String {
 
 #[cfg(not(target_os = "windows"))]
 fn fixpath(p:&str) -> String {
-    str.to_string()
+    p.to_string()
 }
 
 pub fn decanon_path(p:&str) -> String {
@@ -136,11 +139,34 @@ pub fn get_file_mtime(path:&str) -> io::Result<u64> {
     Ok(md.last_write_time())
 }
 
+#[cfg(not(target_os = "windows"))]
+pub fn get_file_mtime(path:&str) -> io::Result<u64> {
+    let md = try!(metadata(&path));
+    let mtime = md.mtime();
+    if mtime < 0 {
+        panic!("Unexpected mtime, < 0: {:?}", mtime)
+    }
+    let umtime:u64 = mtime as u64;
+    Ok(umtime)
+}
+
 #[cfg(target_os = "windows")]
 pub fn get_appdata_dir() -> Option<String> {
     match env::var("APPDATA") {
         Err(_) => None,
         Ok(v) => Some(v.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn get_appdata_dir() -> Option<String> {
+    match env::var("HOME") {
+        Err(_) => None,
+        Ok(v) => {
+            let mut pb = PathBuf::from(&v);
+            pb.push(".greycrypt");
+            Some(pb.to_str().unwrap().to_string())
+        }
     }
 }
 
