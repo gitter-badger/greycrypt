@@ -20,3 +20,9 @@ SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
 
 [Machine_John-WinLaptop.Mapping]
 home = "C:\\Users\\John"
+
+[Machine_johns-mbp_home]
+SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
+
+[Machine_johns-mbp_home.Mapping]
+home = "/Users/john"
