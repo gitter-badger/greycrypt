@@ -5,7 +5,6 @@ extern crate rustc_serialize;
 
 use util;
 use config;
-use mapping;
 use crypto_util;
 
 use std::collections::HashMap;
@@ -336,7 +335,7 @@ impl SyncFile {
     }
 
     // TODO: get rid of panicking in this func
-    pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<String,String> {
+    pub fn read_native_and_save(&self, conf:&config::SyncConfig) -> Result<String,String> {
         let (_,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
@@ -438,17 +437,17 @@ impl SyncFile {
         Ok(outname.to_string())
     }
 
-    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf) -> Result<String,String> {
+    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf) -> Result<(String,SyncFile),String> {
         let res = SyncFile::from_native(&conf, nativepath.to_str().unwrap());
-        match res {
+        let sf = match res {
             Err(e) => return Err(format!("Failed to create sync file: {:?}", e)),
-            Ok(sf) => {
-                let res = sf.read_native_and_save(&conf);
-                match res {
-                    Err(e) => return Err(format!("Failed to update sync file with native data: {:?}", e)),
-                    Ok(sfpath) => Ok(sfpath)
-                }
-            }
+            Ok(sf) => sf
+        };
+
+        let res = sf.read_native_and_save(&conf);
+        match res {
+            Err(e) => return Err(format!("Failed to update sync file with native data: {:?}", e)),
+            Ok(sfpath) => Ok((sfpath,sf))
         }
     }
 }

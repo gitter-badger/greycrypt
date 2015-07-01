@@ -221,7 +221,7 @@ mod tests {
         }
 
         let mut syncdb = match syncdb::SyncDb::new(&conf) {
-            Err(e) => panic!("Failed to get create syncdb: {:?}", e),
+            Err(e) => panic!("Failed to create syncdb: {:?}", e),
             Ok(sdb) => sdb
         };
 

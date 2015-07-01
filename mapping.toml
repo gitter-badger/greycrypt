@@ -2,8 +2,8 @@
 # the absolute path prefix on these paths doesn't matter; as long
 # as there is a mapping for each path on this machine, it will work.
 NativePaths = [
-  "C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
-  "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
+  #"C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
+  #"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
   "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir"
