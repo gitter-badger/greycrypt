@@ -5,7 +5,7 @@ DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 PROJECT_DIR="$DIR/.."
 
 files=$(find src/ -type f -iname "*.rs")
-linecount=$(cat $files | wc -l)
+linecount=$(cat $files | wc -l | tr -d '[[:space:]]')
 touch $PROJECT_DIR/src/main.rs
 mkdir -p $PROJECT_DIR/compiletimes
 set +e
