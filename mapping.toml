@@ -5,7 +5,8 @@ NativePaths = [
   "C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
-  "C:\\Users\\John\\Documents\\GreyCryptTestSrc"
+  "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
+  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir"
   ]
 
 [Machine_Descendent]

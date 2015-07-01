@@ -48,9 +48,28 @@ impl SyncFile {
         hasher.result_str()
     }
 
-    pub fn from_native(mapping: &mapping::Mapping, nativefile: &str) -> Result<SyncFile,String> {
+    pub fn get_sync_id_and_path(conf:&config::SyncConfig, nativefile: &str) -> Result<(String,PathBuf),String> {
         let (kw,relpath) = {
-            let res = mapping.get_kw_relpath(nativefile);
+            let res = conf.mapping.get_kw_relpath(nativefile);
+            match res {
+                None => return Err(format!("No mapping found for native file: {}", nativefile)),
+                Some((kw,relpath)) => (kw,relpath)
+            }
+        };
+        let idstr = SyncFile::get_sync_id(kw,&relpath);
+
+        let mut syncpath = PathBuf::from(&conf.sync_dir);
+        let prefix = &idstr.to_string()[0..2];
+        syncpath.push(prefix);
+        syncpath.push(&idstr);
+        syncpath.set_extension("dat");
+
+        Ok((idstr,syncpath))
+    }
+
+    pub fn from_native(conf:&config::SyncConfig, nativefile: &str) -> Result<SyncFile,String> {
+        let (kw,relpath) = {
+            let res = conf.mapping.get_kw_relpath(nativefile);
             match res {
                 None => return Err(format!("No mapping found for native file: {}", nativefile)),
                 Some((kw,relpath)) => (kw,relpath)
@@ -58,6 +77,7 @@ impl SyncFile {
         };
 
         let idstr = SyncFile::get_sync_id(kw,&relpath);
+
         let ret = SyncFile {
             id: idstr,
             keyword: kw.to_string(),
@@ -315,30 +335,32 @@ impl SyncFile {
         Ok(outpath.to_string())
     }
 
+    // TODO: get rid of panicking in this func
     pub fn read_native_and_save(self, conf:&config::SyncConfig) -> Result<String,String> {
-        let mut outpath = PathBuf::from(&conf.sync_dir);
-        if !outpath.is_dir() {
-            let res = create_dir_all(&outpath);
+        let (_,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
+            Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
+            Ok(pair) => pair
+        };
+
+        let outpath_par = outpath.parent().unwrap();
+        if !outpath_par.is_dir() {
+            let res = create_dir_all(&outpath_par);
             match res {
-                Err(e) => panic!("Failed to create output sync directory: {:?}: {:?}", outpath, e),
+                Err(e) => return Err(format!("Failed to create output sync directory: {:?}: {:?}", outpath_par, e)),
                 Ok(_) => ()
             }
         }
-        // note set_file_name will wipe out the last part of the path, which is a directory
-        // in this case. LOLOL
-        outpath.push(&self.id);
-        outpath.set_extension("dat");
 
         let outname = outpath.to_str().unwrap();
         let res = File::create(outname);
 
         let mut fout = match res {
-            Err(e) => panic!("{:?}", e),
+            Err(e) => return Err(format!("Can't create output file: {:?}", e)),
             Ok(f) => f
         };
 
         let key = match conf.encryption_key {
-            None => panic!("No encryption key"),
+            None => return Err(format!("No encryption key")),
             Some(k) => k
         };
 
@@ -375,18 +397,26 @@ impl SyncFile {
         let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         // read, encrypt, and write file data, not slurping because it could be big
-        let mut fin = match File::open(self.nativefile) {
-            Err(e) => { panic!("Can't open input native file: {}", e) },
+        let mut fin = match File::open(&self.nativefile) {
+            Err(e) => { panic!("Can't open input native file: {}: {}", &self.nativefile, e) },
             Ok(fin) => fin
         };
 
-        let mut buf:[u8;65536] = [0; 65536];
+        // in debug builds, the encryptor is brutally slow, but using a bigger buffer
+        // doesn't help it.
+        //const SIZE: usize = 10485760;
+        //let mut v: Vec<u8> = vec![0;SIZE];
+        //let mut buf = &mut v;
+
+        const SIZE: usize = 1048576;
+        let mut buf:[u8;SIZE] = [0; 1048576];
 
         loop {
             let read_res = fin.read(&mut buf);
             match read_res {
                 Err(e) => { panic!("Read error: {}", e) },
                 Ok(num_read) => {
+                    //println!("read {} bytes",num_read);
                     let enc_bytes = &buf[0 .. num_read];
                     let eof = num_read == 0;
                     let res = crypto.encrypt(enc_bytes, eof);
@@ -396,6 +426,7 @@ impl SyncFile {
                             let _ = fout.write(&d); // TODO: check result
                         }
                     }
+                    //println!("encrypted {} bytes",num_read);
                     if eof {
                         let _ = fout.sync_all(); // TODO: use try!
                         break;
@@ -405,6 +436,20 @@ impl SyncFile {
         }
 
         Ok(outname.to_string())
+    }
+
+    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf) -> Result<String,String> {
+        let res = SyncFile::from_native(&conf, nativepath.to_str().unwrap());
+        match res {
+            Err(e) => return Err(format!("Failed to create sync file: {:?}", e)),
+            Ok(sf) => {
+                let res = sf.read_native_and_save(&conf);
+                match res {
+                    Err(e) => return Err(format!("Failed to update sync file with native data: {:?}", e)),
+                    Ok(sfpath) => Ok(sfpath)
+                }
+            }
+        }
     }
 }
 
@@ -438,23 +483,10 @@ mod tests {
             sync_dir: outpath.to_str().unwrap().to_string(),
             mapping: mapping,
             encryption_key: Some(ec),
-            syncdb_dir: None
+            syncdb_dir: None,
+            native_paths: Vec::new()
         };
         conf
-    }
-
-    fn create_syncfile(conf:&config::SyncConfig, testpath:&PathBuf) -> String {
-        let res = syncfile::SyncFile::from_native(&conf.mapping, testpath.to_str().unwrap());
-        match res {
-            Err(m) => panic!(m),
-            Ok(sf) => {
-                let res = sf.read_native_and_save(&conf);
-                match res {
-                    Err(e) => panic!("{}", e),
-                    Ok(sfpath) => sfpath
-                }
-            }
-        }
     }
 
     #[test]
@@ -468,7 +500,10 @@ mod tests {
 
         let mut conf = get_config();
 
-        let sfpath = create_syncfile(&conf,&testpath);
+        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath) {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(sfpath) => sfpath
+        };
         let sfpath = PathBuf::from(&sfpath);
         let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
         match res {

@@ -189,7 +189,8 @@ mod tests {
             sync_dir: outpath.to_str().unwrap().to_string(),
             mapping: mapping,
             encryption_key: Some(ec),
-            syncdb_dir: Some(syncdb_dir.to_str().unwrap().to_string())
+            syncdb_dir: Some(syncdb_dir.to_str().unwrap().to_string()),
+            native_paths: Vec::new()
         };
         conf
     }
