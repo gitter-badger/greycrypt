@@ -53,12 +53,21 @@ pub fn parse() -> SyncConfig {
 
     // host name mapping must exist
     let hn = util::get_hostname();
+    // "." in the hostname, as is common on macs, will confuse toml.  look for the hostname
+    // "." removed or replaced with "_"
+    let hn = hn.replace(".", "_");
     let hn_key = format!("Machine_{}", hn);
     let (sync_dir, mapping) = {
         let mval = toml.get(&hn_key);
         //println!("{:?}: '{:?}' -> {:?}",toml,&hn_key,mval);
         let hn_config = match mval {
-            None => { panic!("No hostname config found, cannot continue: {}", hn_key) },
+            None => {
+                let mut helpmsg = String::new();
+                if hn.find('.') != None {
+                    helpmsg = format!("Try replacing '.' in your hostname with '_' in the configuration file: {}", hn_key.replace(".", "_"));
+                }
+                panic!("No hostname config found, cannot continue: {}\n{}", hn_key, helpmsg)
+            },
             Some(c) => c
         };
         let hn_config = match hn_config.as_table() {
