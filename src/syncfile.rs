@@ -501,7 +501,7 @@ mod tests {
 
         let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath) {
             Err(e) => panic!("Error {:?}", e),
-            Ok(sfpath) => sfpath
+            Ok((sfpath,_)) => sfpath
         };
         let sfpath = PathBuf::from(&sfpath);
         let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
