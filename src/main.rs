@@ -1,3 +1,7 @@
+// this is really spammy for me, will have to enable periodically
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 #![feature(path_ext)]
 use std::fs::{PathExt};
 use std::path::{PathBuf};
