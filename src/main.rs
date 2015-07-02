@@ -251,33 +251,34 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
 }
 
 fn do_sync(state:&mut SyncState) {
-    // use hashset for path de-dup (TODO: but what about case differences?)
-    let mut native_files = HashSet::new();
+    let native_files = {
+        // use hashset for path de-dup (TODO: but what about case differences?)
+        let mut native_files = HashSet::new();
+        {
+            let mut visitor = |pb: &PathBuf| {
+                native_files.insert(pb.to_str().unwrap().to_string());
+            };
 
-    // ownership of hashset must be transferred to closure for the enumeration, so use scope
-    // block to release it
-    {
-        let mut visitor = |pb: &PathBuf| {
-            native_files.insert(pb.to_str().unwrap().to_string());
-        };
-
-        let native_paths = &state.conf.native_paths;
-        for p in native_paths {
-            let pp = PathBuf::from(p);
-            if !pp.exists() {
-                println!("WARN: path does not exist: {}", p);
-            }
-            if pp.is_file() {
-                visitor(&pp);
-            } else {
-                let res = util::visit_dirs(pp.as_path(), &mut visitor);
-                match res {
-                    Ok(_) => (),
-                    Err(e) => panic!("failed to scan directory: {}: {}", pp.to_str().unwrap(), e),
+            let native_paths = &state.conf.native_paths;
+            for p in native_paths {
+                let pp = PathBuf::from(p);
+                if !pp.exists() {
+                    println!("WARN: path does not exist: {}", p);
                 }
-            }
-        };
-    }
+                if pp.is_file() {
+                    visitor(&pp);
+                } else {
+                    let res = util::visit_dirs(pp.as_path(), &mut visitor);
+                    match res {
+                        Ok(_) => (),
+                        Err(e) => panic!("failed to scan directory: {}: {}", pp.to_str().unwrap(), e),
+                    }
+                }
+            };
+        }
+
+        native_files
+    };
 
     //let mut actions:Vec<SyncAction> = Vec::new();
     let mut actions:HashMap<String,SyncAction> = HashMap::new();
@@ -306,40 +307,51 @@ fn do_sync(state:&mut SyncState) {
         }
     }
 
-    let sync_ext = "dat";
-
     // scan sync files
-    let mut sync_files = HashSet::new();
-    {
-        let mut visitor = |pb: &PathBuf| {
-            match pb.extension() {
-                None => {
-                    return
-                }
-                Some(ext) => {
-                    if ext.to_str().unwrap() != sync_ext {
+    let sync_files = {
+        let sync_ext = "dat";
+
+        let mut sync_files = HashSet::new();
+        {
+            let mut visitor = |pb: &PathBuf| {
+                match pb.extension() {
+                    None => {
                         return
                     }
+                    Some(ext) => {
+                        if ext.to_str().unwrap() != sync_ext {
+                            return
+                        }
+                    }
                 }
-            }
-            sync_files.insert(pb.to_str().unwrap().to_string());
-        };
 
-        let d = &state.conf.sync_dir;
-        let dp = Path::new(d);
-        let res = util::visit_dirs(&dp, &mut visitor);
-        match res {
-            Ok(_) => (),
-            Err(e) => panic!("failed to scan directory: {}: {}", d, e),
+                // for now I'm going to ignore the google "conflict" files, which happens when two different
+                // systems write different data to the same filename.  but I probably need a better strategy
+                // for them.  TODO
+
+                let pbs = pb.to_str().unwrap().to_string();
+                if pb.file_stem().unwrap().to_str().unwrap().find(" ") != None {
+                    //println!("ignore sf: {:?}", pbs);
+                    return
+                }
+                //println!("sf: {:?}", pbs);
+                sync_files.insert(pbs);
+            };
+
+            let d = &state.conf.sync_dir;
+            let dp = Path::new(d);
+            let res = util::visit_dirs(&dp, &mut visitor);
+            match res {
+                Ok(_) => (),
+                Err(e) => panic!("failed to scan directory: {}: {}", d, e),
+            }
         }
-    }
+        sync_files
+    };
 
     for sf in &sync_files {
-        // sid is base filename without extension
-        // TODO: may need to revisit this, and store sid in directly in the file unencrypted.
-        // google drive renames files with suffixes like
-        // " (1)" when it gets confused.  That also creates dup sync files for the same native path,
-        // so will need to deal with that too.
+        // sid is base filename without extension (assuming we are ignoring google " (1)" files)
+
         let syncfile = PathBuf::from(sf);
         let sid = syncfile.file_stem().unwrap().to_str().unwrap();
 
