@@ -89,53 +89,82 @@ impl SyncFile {
         Ok(ret)
     }
 
-    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
+    fn read_top_lines(fin:&File,count:i32) -> Result<Vec<String>,String> {
+        let mut reader = BufReader::new(fin);
+
+        let mut lines:Vec<String> = Vec::new();
+        for i in 0 .. count {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Err(e) => return Err(format!("Failed to read header line {} from syncfile: {}", i, e)),
+                Ok(_) => {
+                    lines.push(line.trim().to_string());
+                }
+            }
+        }
+
+        // This seek is weird, but if we don't do it, we get a zero
+        // byte read when we try to read the file data after the header lines.
+        // Apparently this has the effect of repositioning the file at the unbuffered cursor
+        // position even though the buffered reader has already read a block of data.
+        // https://github.com/rust-lang/rust/blob/9cc0b2247509d61d6a246a5c5ad67f84b9a2d8b6/src/libstd/io/buffered.rs#L305
+        let res = reader.seek(SeekFrom::Current(0));
+        match res {
+            Err(e) => return Err(format!("Failed to seek reader after metadata: {:?}", e)),
+            Ok(_) => ()
+        }
+
+        Ok(lines)
+    }
+
+    pub fn get_syncid_from_file(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<String,String> {
         if !syncpath.is_file() {
             return Err(format!("Syncfile does not exist: {:?}", syncpath));
         }
+        let fin = match File::open(syncpath.to_str().unwrap()) {
+            Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
+            Ok(fin) => fin
+        };
+        match SyncFile::read_top_lines(&fin,1) {
+            Err(e) => return Err(e),
+            Ok(lines) => {
+                Ok(lines[0].to_string())
+            }
+        }
+    }
+
+    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
         let key = match conf.encryption_key {
-            None => panic!("No encryption key"),
+            None => return Err("No encryption key".to_string()),
             Some(k) => k
         };
 
-        // read first two lines
-        // first line is IV, need it to initialize encryptor
-        // use it to unpack/decrypt second line which is metadata
+        if !syncpath.is_file() {
+            return Err(format!("Syncfile does not exist: {:?}", syncpath));
+        }
+
+        // read first n lines:
+        // syncid
+        // iv
+        // metadata
+        // use IV, to initialize crypto helper
+        // use base64/helper to unpack/decrypt second line which is metadata
         // set fields from metadata
-        // read file data from rest of file, decrypt, attach (ugh, may want stream it out, or save
-        // that phase for a separate step)
+        // leave file handle open for later decryption of content data
 
         let fin = match File::open(syncpath.to_str().unwrap()) {
             Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
 
-        let mut ivline = String::new();
-        let mut mdline = String::new();
-
-        {
-            let mut reader = BufReader::new(&fin);
-
-            match reader.read_line(&mut ivline) {
-                Err(e) => return Err(format!("Failed to read header line from syncfile: {:?}: {}", syncpath, e)),
-                Ok(_) => ()
+        let (syncid,ivline,mdline) = {
+            match SyncFile::read_top_lines(&fin,3) {
+                Err(e) => return Err(e),
+                Ok(lines) => {
+                    (lines[0].clone(), lines[1].clone(), lines[2].clone())
+                }
             }
-            match reader.read_line(&mut mdline) {
-                Err(e) => return Err(format!("Failed to read metadata line from syncfile: {:?}: {}", syncpath, e)),
-                Ok(_) => ()
-            }
-
-            // This seek is weird, but if we don't do it, we get a zero
-            // byte read when we try to read the file in restore_native() later on.
-            // Apparently this has the effect of repositioning the file at the unbuffered cursor
-            // position even though the buffered reader has already read a block of data.
-            // https://github.com/rust-lang/rust/blob/9cc0b2247509d61d6a246a5c5ad67f84b9a2d8b6/src/libstd/io/buffered.rs#L305
-            let res = reader.seek(SeekFrom::Current(0));
-            match res {
-                Err(e) => return Err(format!("Failed to seek reader after metadata: {:?}", e)),
-                Ok(_) => ()
-            }
-        }
+        };
 
         let iv = ivline.from_base64().unwrap();// TODO check error
         if iv.len() != IVSIZE {
@@ -336,7 +365,7 @@ impl SyncFile {
 
     // TODO: get rid of panicking in this func
     pub fn read_native_and_save(&self, conf:&config::SyncConfig) -> Result<String,String> {
-        let (_,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
+        let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
         };
@@ -372,6 +401,10 @@ impl SyncFile {
         let key:&[u8] = &key;
         let iv:&[u8] = &iv;
         let mut crypto = crypto_util::CryptoHelper::new(key,iv);
+
+        // write sync id to file (unencrypted)
+        // TODO: get rid of these _
+        let _ = writeln!(fout, "{}", sid);
 
         // write iv to file (unencrypted, base64 encoded)
         let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
@@ -504,12 +537,19 @@ mod tests {
             Ok((sfpath,_)) => sfpath
         };
         let sfpath = PathBuf::from(&sfpath);
+
+        let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&conf,&sfpath) {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(id) => id
+        };
+
         let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
         match res {
             Err(e) => panic!("Error {:?}", e),
             Ok(sf) => {
                 let eid = syncfile::SyncFile::get_sync_id(&sf.keyword,&sf.relpath);
                 assert_eq!(eid,sf.id);
+                assert_eq!(eid,file_syncid);
                 assert_eq!(sf.keyword, "GCPROJROOT");
                 assert_eq!(sf.relpath, "/testdata/test_native_file.txt");
                 // revguid could be anything, but if it wasn't a guid we would already have failed
