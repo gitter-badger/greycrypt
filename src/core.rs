@@ -220,6 +220,67 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     }
 }
 
+fn scan_syncfiles(state:&SyncState) -> HashSet<String> {
+    let sync_ext = "dat";
+
+    let mut files_for_id:HashMap<String,Vec<String>> = HashMap::new();
+    {
+        let mut visitor = |pb: &PathBuf| {
+            match pb.extension() {
+                None => {
+                    return
+                }
+                Some(ext) => {
+                    if ext.to_str().unwrap() != sync_ext {
+                        return
+                    }
+                }
+            }
+
+            // have to read at least the first line to get the syncid.  can't trust the
+            // filename because it could have been renamed.
+            let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&pb) {
+                Err(e) => panic!("Error {:?}", e),
+                Ok(id) => id
+            };
+
+            let pbs = pb.to_str().unwrap().to_string();
+            if files_for_id.contains_key(&file_syncid) {
+                files_for_id.get_mut(&file_syncid).unwrap().push(pbs);
+            } else {
+                files_for_id.insert(file_syncid,vec![pbs]);
+            }
+        };
+
+        let d = &state.conf.sync_dir;
+        let dp = Path::new(d);
+        let res = util::visit_dirs(&dp, &mut visitor);
+        match res {
+            Ok(_) => (),
+            Err(e) => panic!("failed to scan directory: {}: {}", d, e),
+        }
+    }
+
+    let mut sync_files = HashSet::new();
+    // for each key, sort the files for that id by mtime.  use the file with most recent mtime.
+    // TODO: one problem with this is that google drive preserves the mtime of the writer computer,
+    // which may be out of sync with the local.  perhaps use a version number to see
+    // which file is really newer?
+    for (id,files) in files_for_id.iter_mut() {
+        if files.len() > 1 {
+            files.sort_by(|a,b| {
+                let ma = util::get_file_mtime(a).unwrap();
+                let mb = util::get_file_mtime(b).unwrap();
+                mb.cmp(&ma)
+            });
+        }
+
+        sync_files.insert(files[0].clone());
+    }
+
+    sync_files
+}
+
 pub fn do_sync(state:&mut SyncState) {
     let native_files = {
         // use hashset for path de-dup (TODO: but what about case differences?)
@@ -278,46 +339,7 @@ pub fn do_sync(state:&mut SyncState) {
     }
 
     // scan sync files
-    let sync_files = {
-        let sync_ext = "dat";
-
-        let mut sync_files = HashSet::new();
-        {
-            let mut visitor = |pb: &PathBuf| {
-                match pb.extension() {
-                    None => {
-                        return
-                    }
-                    Some(ext) => {
-                        if ext.to_str().unwrap() != sync_ext {
-                            return
-                        }
-                    }
-                }
-
-                // for now I'm going to ignore the google "conflict" files, which happens when two different
-                // systems write different data to the same filename.  but I probably need a better strategy
-                // for them.  TODO
-
-                let pbs = pb.to_str().unwrap().to_string();
-                if pb.file_stem().unwrap().to_str().unwrap().find(" ") != None {
-                    //println!("ignore sf: {:?}", pbs);
-                    return
-                }
-                //println!("sf: {:?}", pbs);
-                sync_files.insert(pbs);
-            };
-
-            let d = &state.conf.sync_dir;
-            let dp = Path::new(d);
-            let res = util::visit_dirs(&dp, &mut visitor);
-            match res {
-                Ok(_) => (),
-                Err(e) => panic!("failed to scan directory: {}: {}", d, e),
-            }
-        }
-        sync_files
-    };
+    let sync_files = scan_syncfiles(state);
 
     for sf in &sync_files {
         // sid is base filename without extension (assuming we are ignoring google " (1)" files)
