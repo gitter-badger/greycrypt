@@ -15,12 +15,14 @@ mod syncfile;
 mod crypto_util;
 mod syncdb;
 
+#[derive(Debug)]
 struct SyncData {
     syncid: String,
     syncfile: PathBuf,
     nativefile: Option<PathBuf>
 }
 
+#[derive(Debug)]
 enum SyncAction {
     Nothing,
     CompareSyncState(SyncData),
@@ -224,29 +226,30 @@ fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
 fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
-        SyncAction::Nothing => clone_action(sa),
         SyncAction::CompareSyncState(ref sd) => compare_sync_state(state,sd),
         SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
-        SyncAction::UpdateSyncfile(_) => clone_action(sa), // don't do this in pass1
-        SyncAction::CreateNewNativeFile(_) => clone_action(sa)
+        SyncAction::Nothing
+        | SyncAction::UpdateSyncfile(_)
+        | SyncAction::CreateNewNativeFile(_) => clone_action(sa)  // don't do this in pass1
+
     }
 }
 fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
-        SyncAction::Nothing => clone_action(sa),
-        SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
-        SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
-        SyncAction::UpdateSyncfile(_) => clone_action(sa),
-        SyncAction::CreateNewNativeFile(_) => clone_action(sa)
+        SyncAction::Nothing
+        | SyncAction::UpdateSyncfile(_)
+        | SyncAction::CreateNewNativeFile(_) => clone_action(sa),
+        SyncAction::CompareSyncState(_)
+        | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
     }
 }
 fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => clone_action(sa),
-        SyncAction::CompareSyncState(_) => panic!("Cannot compare sync state in this pass"),
-        SyncAction::CheckSyncRevguid(_) => panic!("Cannot check sync revguid in this pass"),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
-        SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd)
+        SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd),
+        SyncAction::CompareSyncState(_)
+        | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
     }
 }
 
