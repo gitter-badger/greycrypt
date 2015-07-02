@@ -407,8 +407,8 @@ impl SyncFile {
         //let mut v: Vec<u8> = vec![0;SIZE];
         //let mut buf = &mut v;
 
-        const SIZE: usize = 1048576;
-        let mut buf:[u8;SIZE] = [0; 1048576];
+        const SIZE: usize = 65536;
+        let mut buf:[u8;SIZE] = [0; SIZE];
 
         loop {
             let read_res = fin.read(&mut buf);
