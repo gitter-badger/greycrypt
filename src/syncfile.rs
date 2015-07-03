@@ -645,7 +645,7 @@ mod tests {
         syncpath.push("testdata");
         syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
 
-        let sf = match syncfile::SyncFile::from_syncfile(&conf,&syncpath) {
+        let mut sf = match syncfile::SyncFile::from_syncfile(&conf,&syncpath) {
             Err(e) => panic!("Failed to read syncfile: {:?}", e),
             Ok(sf) => sf
         };
