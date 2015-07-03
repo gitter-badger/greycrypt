@@ -295,7 +295,7 @@ impl SyncFile {
         let _ = writeln!(v, "revguid: {}", self.revguid);
     }
 
-    pub fn restore_native(&self, conf:&config::SyncConfig) -> Result<String,String> {
+    pub fn decrypt_to_writer(&self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
         let ofs = {
             match self.sync_file_state {
                 SyncFileState::Open(ref ofs) => ofs,
@@ -305,6 +305,47 @@ impl SyncFile {
         let key = match conf.encryption_key {
             None => return Err("No encryption key".to_string()),
             Some(k) => k
+        };
+        // make crypto helper
+        let key:&[u8] = &key;
+        let iv:&[u8] = &ofs.iv;
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
+
+        let mut fin = &ofs.handle;
+
+        let mut buf:[u8;65536] = [0; 65536];
+
+        loop {
+            let read_res = fin.read(&mut buf);
+            match read_res {
+                Err(e) => { panic!("Read error: {}", e) },
+                Ok(num_read) => {
+                    let enc_bytes = &buf[0 .. num_read];
+                    let eof = num_read == 0;
+                    let res = crypto.decrypt(enc_bytes, eof);
+                    match res {
+                        Err(e) => panic!("Encryption error: {:?}", e),
+                        Ok(d) => {
+                            let _ = out.write(&d); // TODO: check result
+                        }
+                    }
+                    if eof {
+                        let _ = out.flush(); // TODO: use try!
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn restore_native(&self, conf:&config::SyncConfig) -> Result<String,String> {
+        let ofs = {
+            match self.sync_file_state {
+                SyncFileState::Open(ref ofs) => ofs,
+                _ => return Err("Sync file not open".to_string())
+            }
         };
 
         let outpath = match self.nativefile.trim() {
@@ -322,43 +363,20 @@ impl SyncFile {
             }
         }
 
-        // make crypto helper
-        let key:&[u8] = &key;
-        let iv:&[u8] = &ofs.iv;
-        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
-
-        // prep handles
-        let mut fin = &ofs.handle;
-
+        // prep output handles
         let res = File::create(outpath);
         let mut fout = match res {
             Err(e) => return Err(format!("Failed to create output file: {:?}: {:?}", outpath, e)),
             Ok(f) => f
         };
+        //let mut fout = BufWriter::new(fout);
 
-        let mut buf:[u8;65536] = [0; 65536];
-
-        loop {
-            let read_res = fin.read(&mut buf);
-            match read_res {
-                Err(e) => { panic!("Read error: {}", e) },
-                Ok(num_read) => {
-                    let enc_bytes = &buf[0 .. num_read];
-                    let eof = num_read == 0;
-                    let res = crypto.decrypt(enc_bytes, eof);
-                    match res {
-                        Err(e) => panic!("Encryption error: {:?}", e),
-                        Ok(d) => {
-                            let _ = fout.write(&d); // TODO: check result
-                        }
-                    }
-                    if eof {
-                        let _ = fout.sync_all(); // TODO: use try!
-                        break;
-                    }
-                }
-            }
+        match self.decrypt_to_writer(conf,&mut fout) {
+            Err(e) => return Err(format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
+            Ok(_) => ()
         }
+
+        let _ = fout.sync_all(); // TODO: use try!
 
         Ok(outpath.to_string())
     }
@@ -489,6 +507,7 @@ impl SyncFile {
 mod tests {
     use std::env;
     use std::path::{PathBuf};
+    use std::io::BufWriter;
     use util;
     use config;
     use mapping;
@@ -601,6 +620,35 @@ mod tests {
                 let srctext = util::slurp_text_file(&savetp.to_string());
                 let outtext = util::slurp_text_file(&outfile);
                 assert_eq!(srctext,outtext);
+            }
+        }
+    }
+
+    #[test]
+    fn decrypt_to_mem() {
+        let mut conf = get_config();
+
+        let wd = env::current_dir().unwrap();
+        let mut testpath = PathBuf::from(&wd);
+        testpath.push("testdata");
+        testpath.push("test_native_file.txt");
+        let srctext = util::slurp_bin_file(&testpath.to_str().unwrap().to_string());
+
+        let mut syncpath = PathBuf::from(&wd);
+        syncpath.push("testdata");
+        syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+
+        let sf = match syncfile::SyncFile::from_syncfile(&conf,&syncpath) {
+            Err(e) => panic!("Failed to read syncfile: {:?}", e),
+            Ok(sf) => sf
+        };
+
+        let mut data:Vec<u8> = Vec::new();
+
+        match sf.decrypt_to_writer(&conf, &mut data) {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(_) => {
+                assert_eq!(srctext,data);
             }
         }
     }
