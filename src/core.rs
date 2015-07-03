@@ -334,12 +334,12 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
 
     let do_remove = true;
 
-    println!("for candidate: {}",candidate);
     if dups.len() > 0 {
-        println!(" will use: {}", dups[0].1);
-        println!(" and remove:");
+        // println!("for candidate: {}",candidate);
+        // println!(" will use: {}", dups[0].1);
+        // println!(" and remove:");
         for i in 1 .. dups.len() {
-            println!("   {}", dups[i].1);
+            // println!("   {}", dups[i].1);
 
             if do_remove {
                 let dup = dups[i].1.clone();
@@ -357,7 +357,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
                         Ok(contents) => {
                             let count = contents.count();
                             if count == 0 {
-                                println!("removing empty dir: {}", dname);
+                                //println!("removing empty dir: {}", dname);
                                 let _ = remove_dir(dname);
                             }
                         }
@@ -365,8 +365,6 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
                 }
             }
         }
-    } else {
-        println!("no dups found");
     }
 
     paths.clone()
