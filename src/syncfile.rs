@@ -47,6 +47,8 @@ impl SyncFile {
         hasher.result_str()
     }
 
+    // TODO: this may need to go away.  can't really make a determination about the syncpath
+    // without knowing the current syncdir state.
     pub fn get_sync_id_and_path(conf:&config::SyncConfig, nativefile: &str) -> Result<(String,PathBuf),String> {
         let (kw,relpath) = {
             let res = conf.mapping.get_kw_relpath(nativefile);

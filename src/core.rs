@@ -330,7 +330,9 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
             }
         });
 
-        paths.insert(dup_cand_idx, dups[0].1.clone());
+        // dups[0] is the survivor
+        let syncpath = &dups[0].1;
+        paths.insert(dup_cand_idx, syncpath.clone());
     } else {
         paths.insert(dup_cand_idx, candidate.clone());
     }
@@ -373,7 +375,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
     paths.clone()
 }
 
-pub fn dedup_syncfiles(state:&SyncState) {
+pub fn dedup_syncfiles(state:&mut SyncState) {
     let mut files_for_id = find_all_syncfiles(state);
 
     // sort by id for consisten ordering
@@ -414,11 +416,45 @@ pub fn dedup_syncfiles(state:&SyncState) {
             files.clear();
             files.append(&mut deduped);
         }
+
+        if files.len() == 1 {
+            // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
+            // because the dedup may have changed the active revguid
+            let pb = PathBuf::from(&files[0]);
+            let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
+                Err(e) => panic!("Can't read syncfile: {:?}", e),
+                Ok(sf) => sf
+            };
+            let (do_update,mtime) = {
+                match state.syncdb.get(&sf) {
+                    Some(entry) => {
+                        if sf.revguid != entry.revguid {
+                            (true,entry.native_mtime)
+                        } else {
+                            (false,0)
+                        }
+                    },
+                    None => (false,0), // haven't synced it yet, so this is ok
+                }
+            };
+
+            if do_update {
+                // just reuse the mtime, the sf has the latest revguid already, so just update
+                match state.syncdb.update(&sf,mtime) {
+                    Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
+                    Ok(_) => {
+                        println!("Changed sync revguid for {}", &files[0]);
+                    }
+                }
+            }
+        }
+
+        //println!("files for {}: {:?}", sid, files);
     }
 }
 
 pub fn do_sync(state:&mut SyncState) {
-    dedup_syncfiles(&state);
+    dedup_syncfiles(state);
 
     state.sync_files_for_id = find_all_syncfiles(state);
 
@@ -469,11 +505,21 @@ pub fn do_sync(state:&mut SyncState) {
             panic!("Unexpected error: action already present for file: {}", nf)
         }
 
+        // the syncfile may have been remapped, check state
+        let syncfile = {
+            match state.sync_files_for_id.get(&sid) {
+                None => syncfile,
+                Some (filelist) => PathBuf::from(&filelist[0])
+            }
+        };
+
         let np = Some(PathBuf::from(&nf));
         let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: np };
         if syncfile.is_file() {
+            println!("css for nf: {}: {}", nf, sid);
             actions.insert(sid.to_string(), SyncAction::CompareSyncState(sd));
         } else {
+            println!("usf for nf: {}: {}", nf, sid);
             actions.insert(sid.to_string(), SyncAction::UpdateSyncfile(sd));
         }
     }
@@ -492,11 +538,14 @@ pub fn do_sync(state:&mut SyncState) {
         // sid is base filename without extension (assuming we are ignoring google " (1)" files)
 
         let syncfile = PathBuf::from(sf);
-        let sid = syncfile.file_stem().unwrap().to_str().unwrap();
+        let sid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&syncfile) {
+            Err(e) => panic!("Can't get syncid from file: {}", e),
+            Ok(sid) => sid
+        };
 
         // if we already have a compare action pending for the file, we don't need to crack it
         {
-            let action = actions.get(sid);
+            let action = actions.get(&sid);
             match action {
                 None => (),
                 Some(action) => {
@@ -505,7 +554,9 @@ pub fn do_sync(state:&mut SyncState) {
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
                         SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
                         SyncAction::Nothing => (),
-                        SyncAction::UpdateSyncfile(_) => ()
+                        SyncAction::UpdateSyncfile(_) =>
+                            // this probably just becomes a compare, but we should have detected it earlier
+                            panic!("Already have update pending for native file")
                     }
                 }
             }
