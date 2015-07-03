@@ -295,60 +295,68 @@ impl SyncFile {
         let _ = writeln!(v, "revguid: {}", self.revguid);
     }
 
-    pub fn decrypt_to_writer(&self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
-        let ofs = {
-            match self.sync_file_state {
-                SyncFileState::Open(ref ofs) => ofs,
-                _ => return Err("Sync file not open".to_string())
-            }
-        };
-        let key = match conf.encryption_key {
-            None => return Err("No encryption key".to_string()),
-            Some(k) => k
-        };
-        // make crypto helper
-        let key:&[u8] = &key;
-        let iv:&[u8] = &ofs.iv;
-        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
+    pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
+        {
+            let ofs = {
+                match self.sync_file_state {
+                    SyncFileState::Open(ref ofs) => ofs,
+                    _ => return Err("Sync file not open".to_string())
+                }
+            };
+            let key = match conf.encryption_key {
+                None => return Err("No encryption key".to_string()),
+                Some(k) => k
+            };
+            // make crypto helper
+            let key:&[u8] = &key;
+            let iv:&[u8] = &ofs.iv;
+            let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
-        let mut fin = &ofs.handle;
+            let mut fin = &ofs.handle;
 
-        let mut buf:[u8;65536] = [0; 65536];
+            let mut buf:[u8;65536] = [0; 65536];
 
-        loop {
-            let read_res = fin.read(&mut buf);
-            match read_res {
-                Err(e) => { panic!("Read error: {}", e) },
-                Ok(num_read) => {
-                    let enc_bytes = &buf[0 .. num_read];
-                    let eof = num_read == 0;
-                    let res = crypto.decrypt(enc_bytes, eof);
-                    match res {
-                        Err(e) => panic!("Encryption error: {:?}", e),
-                        Ok(d) => {
-                            let _ = out.write(&d); // TODO: check result
+            loop {
+                let read_res = fin.read(&mut buf);
+                match read_res {
+                    Err(e) => { panic!("Read error: {}", e) },
+                    Ok(num_read) => {
+                        let enc_bytes = &buf[0 .. num_read];
+                        let eof = num_read == 0;
+                        let res = crypto.decrypt(enc_bytes, eof);
+                        match res {
+                            Err(e) => panic!("Encryption error: {:?}", e),
+                            Ok(d) => {
+                                let _ = out.write(&d); // TODO: check result
+                            }
                         }
-                    }
-                    if eof {
-                        let _ = out.flush(); // TODO: use try!
-                        break;
+                        if eof {
+                            let _ = out.flush(); // TODO: use try!
+                            break;
+                        }
                     }
                 }
             }
         }
 
+        // close file now
+        self.sync_file_state = SyncFileState::Closed;
+
         Ok(())
     }
 
-    pub fn restore_native(&self, conf:&config::SyncConfig) -> Result<String,String> {
-        let ofs = {
-            match self.sync_file_state {
-                SyncFileState::Open(ref ofs) => ofs,
-                _ => return Err("Sync file not open".to_string())
-            }
-        };
+    pub fn restore_native(&mut self, conf:&config::SyncConfig) -> Result<String,String> {
+        { // check to make sure file is open, scoped to prevent borrow conflicts
+            let ofs = {
+                match self.sync_file_state {
+                    SyncFileState::Open(ref ofs) => ofs,
+                    _ => return Err("Sync file not open".to_string())
+                }
+            };
+        }
 
-        let outpath = match self.nativefile.trim() {
+        let nativefile = self.nativefile.clone();
+        let outpath = match nativefile.trim() {
             "" => return Err("Native path not set, call set_nativefile_path()".to_string()),
             s => s
         };
@@ -507,7 +515,6 @@ impl SyncFile {
 mod tests {
     use std::env;
     use std::path::{PathBuf};
-    use std::io::BufWriter;
     use util;
     use config;
     use mapping;
