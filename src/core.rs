@@ -1,7 +1,8 @@
-use std::fs::{PathExt};
+use std::fs::{PathExt,remove_file,remove_dir,read_dir};
 use std::path::{Path,PathBuf};
 use std::collections::HashSet;
 use std::collections::HashMap;
+use std::cmp::Ordering;
 
 use util;
 use config;
@@ -26,7 +27,17 @@ enum SyncAction {
 
 pub struct SyncState {
     pub conf: config::SyncConfig,
-    pub syncdb: syncdb::SyncDb
+    pub syncdb: syncdb::SyncDb,
+    pub sync_files_for_id: HashMap<String,Vec<String>>,
+}
+
+impl SyncState {
+    pub fn is_conflicted(&self,sid:&str) -> bool {
+        match self.sync_files_for_id.get(sid) {
+            None => false,
+            Some(files) => files.len() > 1
+        }
+    }
 }
 
 fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
@@ -153,7 +164,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     }
 }
 
-fn do_update_native_file(sf:&syncfile::SyncFile, state:&mut SyncState) {
+fn do_update_native_file(sf:&mut syncfile::SyncFile, state:&mut SyncState) {
     let res = sf.restore_native(&state.conf);
     let outfile = {
         match res {
@@ -177,7 +188,7 @@ fn do_update_native_file(sf:&syncfile::SyncFile, state:&mut SyncState) {
 }
 
 fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
-    let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+    let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
         Err(e) => panic!("Can't read syncfile: {:?}", e),
         Ok(sf) => sf
     };
@@ -187,7 +198,7 @@ fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     if nativefile_path.is_file() {
         panic!("Native path already exists for syncfile, refusing to overwrite: {}", &sf.nativefile);
     }
-    do_update_native_file(&sf, state);
+    do_update_native_file(&mut sf, state);
     SyncAction::Nothing
 }
 
@@ -220,16 +231,14 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     }
 }
 
-fn scan_syncfiles(state:&SyncState) -> HashSet<String> {
+fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
     let sync_ext = "dat";
 
     let mut files_for_id:HashMap<String,Vec<String>> = HashMap::new();
     {
         let mut visitor = |pb: &PathBuf| {
             match pb.extension() {
-                None => {
-                    return
-                }
+                None => return,
                 Some(ext) => {
                     if ext.to_str().unwrap() != sync_ext {
                         return
@@ -260,28 +269,149 @@ fn scan_syncfiles(state:&SyncState) -> HashSet<String> {
             Err(e) => panic!("failed to scan directory: {}: {}", d, e),
         }
     }
+    files_for_id
+}
 
-    let mut sync_files = HashSet::new();
-    // for each key, sort the files for that id by mtime.  use the file with most recent mtime.
-    // TODO: one problem with this is that google drive preserves the mtime of the writer computer,
-    // which may be out of sync with the local.  perhaps use a version number to see
-    // which file is really newer?
-    for (id,files) in files_for_id.iter_mut() {
-        if files.len() > 1 {
-            files.sort_by(|a,b| {
-                let ma = util::get_file_mtime(a).unwrap();
-                let mb = util::get_file_mtime(b).unwrap();
-                mb.cmp(&ma)
-            });
+fn load_syncfile_or_panic(state:&SyncState,syncpath:&String,data:&mut Vec<u8>) -> syncfile::SyncFile {
+    let pb = PathBuf::from(syncpath);
+    let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
+        Err(e) => panic!("Failed to read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+    match sf.decrypt_to_writer(&state.conf, data) {
+        Err(e) => panic!("Error {:?}", e),
+        Ok(_) => ()
+    }
+    sf
+}
+
+fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<String> {
+    // partition into dups and non dups
+    let mut nondups:Vec<String> = Vec::new();
+    let mut dups:Vec<(syncfile::SyncFile,String)> = Vec::new();
+
+    let candidate = &paths[dup_cand_idx];
+
+    let mut cand_data:Vec<u8> = Vec::new();
+    let cand_sf = load_syncfile_or_panic(state,&candidate,&mut cand_data);
+
+    for i in 0 .. paths.len() {
+        if i < dup_cand_idx {
+            nondups.push(paths[i].clone());
+        } else if i > dup_cand_idx {
+            let mut pot_dup_data:Vec<u8> = Vec::new();
+            let pot_dup_sf = load_syncfile_or_panic(state,&paths[i],&mut pot_dup_data);
+            if pot_dup_data == cand_data {
+                dups.push((pot_dup_sf,paths[i].clone()));
+            }
         }
-
-        sync_files.insert(files[0].clone());
     }
 
-    sync_files
+    let mut paths = nondups;
+
+    if dups.len() > 0 {
+        // need to find the file with lowest revguid (including the candidate), so
+        // push it on to the dup list
+        dups.push((cand_sf,candidate.clone()));
+
+        dups.sort_by(|a,b| {
+            let asf = &a.0;
+            let bsf = &b.0;
+            let ord = bsf.revguid.to_string().cmp(&asf.revguid.to_string());
+            if ord == Ordering::Equal {
+                let afn = &a.1;
+                let bfn = &b.1;
+                bfn.cmp(afn)
+            } else {
+                ord
+            }
+        });
+
+        paths.insert(dup_cand_idx, dups[0].1.clone());
+    } else {
+        paths.push(candidate.clone());
+    }
+
+    let do_remove = true;
+
+    println!("for candidate: {}",candidate);
+    if dups.len() > 0 {
+        println!(" will use: {}", dups[0].1);
+        println!(" and remove:");
+        for i in 1 .. dups.len() {
+            println!("   {}", dups[i].1);
+
+            if do_remove {
+                let dup = dups[i].1.clone();
+
+                let pb = PathBuf::from(&dup);
+                let pb_par = pb.parent().unwrap();
+                let dname = pb_par.to_str().unwrap();
+
+                println!("removing file: {}", dup);
+                let _ = remove_file(&dup);// TODO handle error
+
+                if pb_par.is_dir() {
+                    match read_dir(dname) {
+                        Err(_) => (),
+                        Ok(contents) => {
+                            let count = contents.count();
+                            if count == 0 {
+                                println!("removing empty dir: {}", dname);
+                                let _ = remove_dir(dname);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        println!("no dups found");
+    }
+
+    paths.clone()
+}
+
+pub fn dedup_syncfiles(state:&SyncState) {
+    let mut files_for_id = find_all_syncfiles(state);
+
+    // sort by id for consisten ordering
+    let mut sids:Vec<String> = Vec::new();
+    for (k,_) in &files_for_id {
+        sids.push(k.to_string());
+    }
+    //let sids = files_for_id.keys().map(|k| -> )
+    sids.sort();
+
+    for sid in &sids {
+        let files = files_for_id.get_mut(sid).unwrap();
+        if files.len() > 1 {
+            // for each file, locate all other duplicates of that file in the list.
+            // keep the file with the lowest (numeric) revguid, remove the others.
+            // if there are more than one file with the lowest revguid, remove all but one of them.
+            //println!("Dup files: {:?}",files);
+            let mut dup_cand_idx = 0;
+            let mut deduped = files.clone();
+            // TODO: figure out how to do this with all the nasty copying, while
+            // keeping BC happy
+            while dup_cand_idx < deduped.len() {
+                let mut reslist = dedup_helper(&state, dup_cand_idx, &mut deduped);
+                deduped.clear();
+                deduped.append(&mut reslist);
+                dup_cand_idx = dup_cand_idx + 1;
+            }
+
+            files.clear();
+            files.append(&mut deduped);
+        }
+    }
 }
 
 pub fn do_sync(state:&mut SyncState) {
+    dedup_syncfiles(&state);
+
+    state.sync_files_for_id = find_all_syncfiles(state);
+
     let native_files = {
         // use hashset for path de-dup (TODO: but what about case differences?)
         let mut native_files = HashSet::new();
@@ -339,7 +469,14 @@ pub fn do_sync(state:&mut SyncState) {
     }
 
     // scan sync files
-    let sync_files = scan_syncfiles(state);
+    let mut sync_files:Vec<String> = Vec::new();
+    for (sid,files) in &state.sync_files_for_id {
+        if !state.is_conflicted(sid) {
+            sync_files.push(files[0].to_string());
+        } else {
+            println!("Ignoring conflicted sync file: {}", files[0]);
+        }
+    }
 
     for sf in &sync_files {
         // sid is base filename without extension (assuming we are ignoring google " (1)" files)

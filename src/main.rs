@@ -4,6 +4,8 @@
 
 #![feature(path_ext)]
 
+#![feature(append)] // for sync dedup, hopefully can remove
+
 mod util;
 mod config;
 mod mapping;
@@ -11,6 +13,8 @@ mod syncfile;
 mod crypto_util;
 mod syncdb;
 mod core;
+
+use std::collections::HashMap;
 
 fn main() {
     let conf = config::parse();
@@ -21,7 +25,8 @@ fn main() {
 
     let mut state = core::SyncState {
         syncdb: syncdb,
-        conf: conf
+        conf: conf,
+        sync_files_for_id: HashMap::new()
     };
     core::do_sync(&mut state);
 }
