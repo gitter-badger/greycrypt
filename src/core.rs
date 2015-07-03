@@ -415,35 +415,35 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
 
             files.clear();
             files.append(&mut deduped);
-        }
 
-        if files.len() == 1 {
-            // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
-            // because the dedup may have changed the active revguid
-            let pb = PathBuf::from(&files[0]);
-            let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
-                Err(e) => panic!("Can't read syncfile: {:?}", e),
-                Ok(sf) => sf
-            };
-            let (do_update,mtime) = {
-                match state.syncdb.get(&sf) {
-                    Some(entry) => {
-                        if sf.revguid != entry.revguid {
-                            (true,entry.native_mtime)
-                        } else {
-                            (false,0)
+            if files.len() == 1 {
+                // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
+                // because the dedup may have changed the active revguid
+                let pb = PathBuf::from(&files[0]);
+                let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
+                    Err(e) => panic!("Can't read syncfile: {:?}", e),
+                    Ok(sf) => sf
+                };
+                let (do_update,mtime) = {
+                    match state.syncdb.get(&sf) {
+                        Some(entry) => {
+                            if sf.revguid != entry.revguid {
+                                (true,entry.native_mtime)
+                            } else {
+                                (false,0)
+                            }
+                        },
+                        None => (false,0), // haven't synced it yet, so this is ok
+                    }
+                };
+
+                if do_update {
+                    // just reuse the mtime, the sf has the latest revguid already, so just update
+                    match state.syncdb.update(&sf,mtime) {
+                        Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
+                        Ok(_) => {
+                            println!("Changed sync revguid for {}", &files[0]);
                         }
-                    },
-                    None => (false,0), // haven't synced it yet, so this is ok
-                }
-            };
-
-            if do_update {
-                // just reuse the mtime, the sf has the latest revguid already, so just update
-                match state.syncdb.update(&sf,mtime) {
-                    Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
-                    Ok(_) => {
-                        println!("Changed sync revguid for {}", &files[0]);
                     }
                 }
             }
@@ -503,6 +503,12 @@ pub fn do_sync(state:&mut SyncState) {
 
         if actions.contains_key(&sid) {
             panic!("Unexpected error: action already present for file: {}", nf)
+        }
+
+        // if its conflicted, skip
+        if state.is_conflicted(&sid) {
+            println!("Skipping conflicted native file: {}", nf);
+            continue
         }
 
         // the syncfile may have been remapped, check state
