@@ -21,6 +21,7 @@ enum SyncAction {
     Nothing,
     CompareSyncState(SyncData),
     UpdateSyncfile(SyncData),
+    UpdateNativeFile(SyncData),
     CreateNewNativeFile(SyncData),
     CheckSyncRevguid(SyncData)
 }
@@ -72,7 +73,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         },
         (true,false) => {
             println!("Would update native from syncfile, but I don't know how to do it: {}", nativefile_str);
-            SyncAction::Nothing
+            SyncAction::UpdateNativeFile(sd.clone())
         },
         (false,true) => {
             // Sync file needs update
@@ -82,6 +83,30 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
             SyncAction::Nothing
         }
     }
+}
+
+fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+    println!("Updating native file: {:?}", sd.nativefile);
+    let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+    let res = sf.restore_native(&state.conf);
+    let outfile = {
+        match res {
+            Err(e) => panic!("Error updating native file {:?}", e),
+            Ok(outfile) => outfile
+        }
+    };
+    let native_mtime = match util::get_file_mtime(&outfile) {
+        Err(e) => panic!("Error getting file mtime: {:?}", e),
+        Ok(mtime) => mtime
+    };
+    match state.syncdb.update(&sf,native_mtime) {
+        Err(e) => panic!("Failed to update sync db: {:?}", e),
+        Ok(_) => ()
+    };
+    SyncAction::Nothing
 }
 
 fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
@@ -208,6 +233,7 @@ fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
         SyncAction::Nothing
         | SyncAction::UpdateSyncfile(_)
+        | SyncAction::UpdateNativeFile(_)
         | SyncAction::CreateNewNativeFile(_) => sa.clone()  // don't do this in pass1
 
     }
@@ -216,6 +242,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing
         | SyncAction::UpdateSyncfile(_)
+        | SyncAction::UpdateNativeFile(_)
         | SyncAction::CreateNewNativeFile(_) => sa.clone(),
         SyncAction::CompareSyncState(_)
         | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
@@ -224,6 +251,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
 fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => sa.clone(),
+        SyncAction::UpdateNativeFile(ref sd) => update_native_file(state,sd),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
         SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd),
         SyncAction::CompareSyncState(_)
@@ -560,7 +588,8 @@ pub fn do_sync(state:&mut SyncState) {
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
                         SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
                         SyncAction::Nothing => (),
-                        SyncAction::UpdateSyncfile(_) =>
+                        SyncAction::UpdateNativeFile(_)
+                        | SyncAction::UpdateSyncfile(_) =>
                             // this probably just becomes a compare, but we should have detected it earlier
                             panic!("Already have update pending for native file")
                     }
