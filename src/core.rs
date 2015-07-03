@@ -291,6 +291,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
     let mut dups:Vec<(syncfile::SyncFile,String)> = Vec::new();
 
     let candidate = &paths[dup_cand_idx];
+    //println!("dup cand: {}; idx {}, paths: {:?}",candidate,dup_cand_idx,paths);
 
     let mut cand_data:Vec<u8> = Vec::new();
     let cand_sf = load_syncfile_or_panic(state,&candidate,&mut cand_data);
@@ -303,6 +304,8 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
             let pot_dup_sf = load_syncfile_or_panic(state,&paths[i],&mut pot_dup_data);
             if pot_dup_data == cand_data {
                 dups.push((pot_dup_sf,paths[i].clone()));
+            } else {
+                nondups.push(paths[i].clone());
             }
         }
     }
@@ -329,7 +332,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
 
         paths.insert(dup_cand_idx, dups[0].1.clone());
     } else {
-        paths.push(candidate.clone());
+        paths.insert(dup_cand_idx, candidate.clone());
     }
 
     let do_remove = true;
@@ -348,7 +351,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
                 let pb_par = pb.parent().unwrap();
                 let dname = pb_par.to_str().unwrap();
 
-                println!("removing file: {}", dup);
+                println!("removing dup file: {}", dup);
                 let _ = remove_file(&dup);// TODO handle error
 
                 if pb_par.is_dir() {
@@ -378,8 +381,9 @@ pub fn dedup_syncfiles(state:&SyncState) {
     for (k,_) in &files_for_id {
         sids.push(k.to_string());
     }
-    //let sids = files_for_id.keys().map(|k| -> )
     sids.sort();
+
+    //let rm_sync_dir = |x: &String| { x.to_string().replace(&state.conf.sync_dir, "").to_string() };
 
     for sid in &sids {
         let files = files_for_id.get_mut(sid).unwrap();
@@ -393,7 +397,15 @@ pub fn dedup_syncfiles(state:&SyncState) {
             // TODO: figure out how to do this with all the nasty copying, while
             // keeping BC happy
             while dup_cand_idx < deduped.len() {
+                // println!("checking dups for: idx: {}: {}", dup_cand_idx, rm_sync_dir(&deduped[dup_cand_idx]));
+                // for x in &deduped {
+                //     println!("  pot dup: {}", rm_sync_dir(&x));
+                // }
                 let mut reslist = dedup_helper(&state, dup_cand_idx, &mut deduped);
+                // println!("res:");
+                // for x in &reslist {
+                //     println!("  {}", rm_sync_dir(&x));
+                // }
                 deduped.clear();
                 deduped.append(&mut reslist);
                 dup_cand_idx = dup_cand_idx + 1;
