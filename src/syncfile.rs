@@ -168,7 +168,10 @@ impl SyncFile {
             }
         };
 
-        let iv = ivline.from_base64().unwrap();// TODO check error
+        let iv = match ivline.from_base64() {
+            Err(e) => return Err(format!("Unable to parse IV line: {}", e)),
+            Ok(iv) => iv
+        };
         if iv.len() != IVSIZE {
             return Err(format!("Unexpected IV length: {}", iv.len()));
         }
@@ -321,19 +324,30 @@ impl SyncFile {
             loop {
                 let read_res = fin.read(&mut buf);
                 match read_res {
-                    Err(e) => { panic!("Read error: {}", e) },
+                    Err(e) => { return Err(format!("Read error: {}", e)) },
                     Ok(num_read) => {
                         let enc_bytes = &buf[0 .. num_read];
                         let eof = num_read == 0;
                         let res = crypto.decrypt(enc_bytes, eof);
                         match res {
-                            Err(e) => panic!("Encryption error: {:?}", e),
+                            Err(e) => return Err(format!("Encryption error: {:?}", e)),
                             Ok(d) => {
-                                let _ = out.write(&d); // TODO: check result
+                                let dlen = d.len();
+                                match out.write(&d) {
+                                    Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                                    Ok(nbytes) => {
+                                        if nbytes != dlen {
+                                            return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                        }
+                                    }
+                                }
                             }
                         }
                         if eof {
-                            let _ = out.flush(); // TODO: use try!
+                            match out.flush() {
+                                Err(e) => return Err(format!("Failed to flush output reader: {}",e)),
+                                Ok(_) => ()
+                            }
                             break;
                         }
                     }
@@ -341,7 +355,7 @@ impl SyncFile {
             }
         }
 
-        // close file now
+        // close input file now
         self.sync_file_state = SyncFileState::Closed;
 
         Ok(())
@@ -386,12 +400,9 @@ impl SyncFile {
             Ok(_) => ()
         }
 
-        let _ = fout.sync_all(); // TODO: use try!
-
         Ok(outpath.to_string())
     }
 
-    // TODO: get rid of panicking in this func
     pub fn read_native_and_save(&self, conf:&config::SyncConfig) -> Result<String,String> {
         let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
@@ -408,9 +419,7 @@ impl SyncFile {
         }
 
         let outname = outpath.to_str().unwrap();
-        let res = File::create(outname);
-
-        let mut fout = match res {
+        let mut fout = match File::create(outname) {
             Err(e) => return Err(format!("Can't create output file: {:?}", e)),
             Ok(f) => f
         };
@@ -446,7 +455,7 @@ impl SyncFile {
         let res = crypto.encrypt(&v[..], true);
 
         match res {
-            Err(e) => panic!("Encryption error: {:?}", e),
+            Err(e) => return Err(format!("Encryption error: {:?}", e)),
             Ok(d) => {
                 let b64_out = d[..].to_base64(STANDARD);
                 let _ = writeln!(fout, "{}", b64_out);
@@ -458,12 +467,13 @@ impl SyncFile {
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(&self.nativefile) {
-            Err(e) => { panic!("Can't open input native file: {}: {}", &self.nativefile, e) },
+            Err(e) => { return Err(format!("Can't open input native file: {}: {}", &self.nativefile, e)) },
             Ok(fin) => fin
         };
 
         // in debug builds, the encryptor is brutally slow, but using a bigger buffer
-        // doesn't help it.
+        // doesn't help it.  also mac has trouble with big stack buffers (probably should use heap
+        // alloc)
         //const SIZE: usize = 10485760;
         //let mut v: Vec<u8> = vec![0;SIZE];
         //let mut buf = &mut v;
@@ -474,21 +484,28 @@ impl SyncFile {
         loop {
             let read_res = fin.read(&mut buf);
             match read_res {
-                Err(e) => { panic!("Read error: {}", e) },
+                Err(e) => { return Err(format!("Read error: {}", e)) },
                 Ok(num_read) => {
                     //println!("read {} bytes",num_read);
                     let enc_bytes = &buf[0 .. num_read];
                     let eof = num_read == 0;
                     let res = crypto.encrypt(enc_bytes, eof);
                     match res {
-                        Err(e) => panic!("Encryption error: {:?}", e),
+                        Err(e) => return Err(format!("Encryption error: {:?}", e)),
                         Ok(d) => {
-                            let _ = fout.write(&d); // TODO: check result
+                            let dlen = d.len();
+                            match fout.write(&d) {
+                                Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                                Ok(nbytes) => {
+                                    if nbytes != dlen {
+                                        return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                    }
+                                }
+                            }
                         }
                     }
                     //println!("encrypted {} bytes",num_read);
                     if eof {
-                        let _ = fout.sync_all(); // TODO: use try!
                         break;
                     }
                 }
@@ -635,7 +652,7 @@ mod tests {
 
     #[test]
     fn decrypt_to_mem() {
-        let mut conf = get_config();
+        let conf = get_config();
 
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
