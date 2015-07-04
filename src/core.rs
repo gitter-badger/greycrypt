@@ -364,34 +364,32 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
         paths.insert(dup_cand_idx, candidate.clone());
     }
 
-    let do_remove = true;
-
     if dups.len() > 0 {
         // println!("for candidate: {}",candidate);
         // println!(" will use: {}", dups[0].1);
         // println!(" and remove:");
         for i in 1 .. dups.len() {
             // println!("   {}", dups[i].1);
+            let dup = dups[i].1.clone();
 
-            if do_remove {
-                let dup = dups[i].1.clone();
+            let pb = PathBuf::from(&dup);
+            let pb_par = pb.parent().unwrap();
+            let dname = pb_par.to_str().unwrap();
 
-                let pb = PathBuf::from(&dup);
-                let pb_par = pb.parent().unwrap();
-                let dname = pb_par.to_str().unwrap();
+            println!("removing dup file: {}", dup);
+            match remove_file(&dup) {
+                Err(e) => println!("Warning: failed to remove dup sync file: {}: {}", dup, e),
+                Ok(_) => ()
+            }
 
-                println!("removing dup file: {}", dup);
-                let _ = remove_file(&dup);// TODO handle error
-
-                if pb_par.is_dir() {
-                    match read_dir(dname) {
-                        Err(_) => (),
-                        Ok(contents) => {
-                            let count = contents.count();
-                            if count == 0 {
-                                //println!("removing empty dir: {}", dname);
-                                let _ = remove_dir(dname);
-                            }
+            if pb_par.is_dir() {
+                match read_dir(dname) {
+                    Err(_) => (),
+                    Ok(contents) => {
+                        let count = contents.count();
+                        if count == 0 {
+                            //println!("removing empty dir: {}", dname);
+                            let _ = remove_dir(dname);
                         }
                     }
                 }
@@ -412,7 +410,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
     }
     sids.sort();
 
-    //let rm_sync_dir = |x: &String| { x.to_string().replace(&state.conf.sync_dir, "").to_string() };
+    //let rem_sync_dir_prefix = |x: &String| { x.to_string().replace(&state.conf.sync_dir, "").to_string() };
 
     for sid in &sids {
         let files = files_for_id.get_mut(sid).unwrap();
@@ -426,14 +424,14 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             // TODO: figure out how to do this with all the nasty copying, while
             // keeping BC happy
             while dup_cand_idx < deduped.len() {
-                // println!("checking dups for: idx: {}: {}", dup_cand_idx, rm_sync_dir(&deduped[dup_cand_idx]));
+                // println!("checking dups for: idx: {}: {}", dup_cand_idx, rem_sync_dir_prefix(&deduped[dup_cand_idx]));
                 // for x in &deduped {
-                //     println!("  pot dup: {}", rm_sync_dir(&x));
+                //     println!("  pot dup: {}", rem_sync_dir_prefix(&x));
                 // }
                 let mut reslist = dedup_helper(&state, dup_cand_idx, &mut deduped);
                 // println!("res:");
                 // for x in &reslist {
-                //     println!("  {}", rm_sync_dir(&x));
+                //     println!("  {}", rem_sync_dir_prefix(&x));
                 // }
                 deduped.clear();
                 deduped.append(&mut reslist);
@@ -601,9 +599,6 @@ pub fn do_sync(state:&mut SyncState) {
         let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: None };
         actions.insert(sid.to_string(), SyncAction::CheckSyncRevguid(sd));
     }
-
-    // TODO: use map() once I figure how to match on the struct references
-    //let actions = actions.iter().map(|a| pass1_action_handler(a) );
 
     fn process_actions<F>(state:&mut SyncState, actions:&HashMap<String,SyncAction>, act_fn: &mut F ) -> HashMap<String,SyncAction>
         where F: FnMut(&mut SyncState, &SyncAction) -> SyncAction {
