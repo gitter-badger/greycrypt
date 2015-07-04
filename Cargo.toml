@@ -1,5 +1,5 @@
 [package]
-name = "GreyCrypt"
+name = "grey_crypt"
 version = "0.0.1"
 authors = [ "John Quigley <jmquigs@gmail.com>" ]
 
