@@ -72,7 +72,6 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
                 sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
         },
         (true,false) => {
-            println!("Would update native from syncfile, but I don't know how to do it: {}", nativefile_str);
             SyncAction::UpdateNativeFile(sd.clone())
         },
         (false,true) => {
@@ -86,11 +85,11 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 }
 
 fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
-    println!("Updating native file: {:?}", sd.nativefile);
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
         Err(e) => panic!("Can't read syncfile: {:?}", e),
         Ok(sf) => sf
     };
+    println!("Updating native file: {:?}", sf.nativefile);
     let res = sf.restore_native(&state.conf);
     let outfile = {
         match res {
@@ -550,10 +549,10 @@ pub fn do_sync(state:&mut SyncState) {
         let np = Some(PathBuf::from(&nf));
         let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: np };
         if syncfile.is_file() {
-            println!("css for nf: {}: {}", nf, sid);
+            //println!("css for nf: {}: {}", nf, sid);
             actions.insert(sid.to_string(), SyncAction::CompareSyncState(sd));
         } else {
-            println!("usf for nf: {}: {}", nf, sid);
+            //println!("usf for nf: {}: {}", nf, sid);
             actions.insert(sid.to_string(), SyncAction::UpdateSyncfile(sd));
         }
     }
