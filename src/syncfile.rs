@@ -651,6 +651,7 @@ mod tests {
     }
 
     #[test]
+    // fails on mac, think its the line endings
     fn decrypt_to_mem() {
         let conf = get_config();
 

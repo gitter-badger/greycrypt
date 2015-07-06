@@ -170,6 +170,32 @@ pub fn get_appdata_dir() -> Option<String> {
     }
 }
 
+// this is a port of the git method.
+// http://stackoverflow.com/questions/6119956/how-to-determine-if-git-handles-a-file-as-binary-or-as-text
+pub fn file_is_binary(f:&str) -> io::Result<bool> {
+    let maxbytes = 8000;
+    let attr = try!(fs::metadata(f));
+    let len = attr.len();
+    let maxbytes = if len < maxbytes { len } else { maxbytes };
+    let maxbytes = maxbytes as usize;
+
+    let mut v: Vec<u8> = vec![0;maxbytes];
+    let mut buf = &mut v;
+
+    let mut f = try!(File::open(f));
+    let nbytes = try!(f.read(&mut buf));
+    if nbytes < maxbytes {
+        return Err(io::Error::new(io::ErrorKind::Other, "Failed to read expected number of bytes from file"));
+    } else {
+        for i in 0 .. nbytes {
+            if buf[i] == 0 {
+                return Ok(true)
+            }
+        }
+        return Ok(false)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env;
@@ -189,5 +215,33 @@ mod tests {
         let bin_to_text = String::from_utf8(bintext);
         assert!(bin_to_text.is_ok());
         assert_eq!(srctext, bin_to_text.unwrap());
+    }
+
+    #[test]
+    fn file_is_binary() {
+        let wd = env::current_dir().unwrap();
+        {
+            let mut testpath = PathBuf::from(&wd);
+            testpath.push("testdata");
+            testpath.push("test_native_file.txt");
+            let path = testpath.to_str().unwrap();
+
+            match util::file_is_binary(&path) {
+                Ok(isb) => assert_eq!(isb,false),
+                Err(e) => panic!("{}", e)
+            }
+        }
+
+        {
+            let mut syncpath = PathBuf::from(&wd);
+            syncpath.push("testdata");
+            syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+            let path = syncpath.to_str().unwrap();
+
+            match util::file_is_binary(&path) {
+                Ok(isb) => assert_eq!(isb,true),
+                Err(e) => panic!("{}", e)
+            }
+        }
     }
 }
