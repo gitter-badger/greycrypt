@@ -321,7 +321,7 @@ impl SyncFile {
         let _ = writeln!(v, "is_binary: {}", self.is_binary);
     }
 
-    pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
+    fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
         {
             let ofs = {
                 match self.sync_file_state {
@@ -380,6 +380,39 @@ impl SyncFile {
         self.sync_file_state = SyncFileState::Closed;
 
         Ok(())
+    }
+
+    pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
+        // if file is binary, can go directly to target_out.  otherwise, have to
+        // stream to intermediate buffer and nativize the line endings.
+
+        if self.is_binary {
+            self.decrypt_helper(conf,out)
+        } else {
+            let mut temp_out:Vec<u8> = Vec::new();
+            match self.decrypt_helper(conf,&mut temp_out) {
+                Err(e) => Err(e),
+                Ok(_) => {
+                    let d = &temp_out[0 .. temp_out.len()];
+
+                    let br = BufReader::new(d);
+                    let in_lines = br.lines();
+                    for l in in_lines {
+                        match l {
+                            Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                            Ok(l) => {
+                                match writeln!(out,"{}",l) {
+                                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                                    Ok(_) => ()
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(())
+                }
+            }
+        }
     }
 
     pub fn restore_native(&mut self, conf:&config::SyncConfig) -> Result<String,String> {
@@ -492,42 +525,77 @@ impl SyncFile {
             Ok(fin) => fin
         };
 
-        // in debug builds, the encryptor is brutally slow, but using a bigger buffer
-        // doesn't help it.  also mac has trouble with big stack buffers (probably should use heap
-        // alloc)
-        //const SIZE: usize = 10485760;
-        //let mut v: Vec<u8> = vec![0;SIZE];
-        //let mut buf = &mut v;
+        if self.is_binary {
+            // stream-encrypt binary files
+            const SIZE: usize = 1048576;
+            let mut v: Vec<u8> = vec![0;SIZE];
+            let mut buf = &mut v;
 
-        const SIZE: usize = 65536;
-        let mut buf:[u8;SIZE] = [0; SIZE];
-
-        loop {
-            let read_res = fin.read(&mut buf);
-            match read_res {
-                Err(e) => { return Err(format!("Read error: {}", e)) },
-                Ok(num_read) => {
-                    //println!("read {} bytes",num_read);
-                    let enc_bytes = &buf[0 .. num_read];
-                    let eof = num_read == 0;
-                    let res = crypto.encrypt(enc_bytes, eof);
-                    match res {
-                        Err(e) => return Err(format!("Encryption error: {:?}", e)),
-                        Ok(d) => {
-                            let dlen = d.len();
-                            match fout.write(&d) {
-                                Err(e) => return Err(format!("Failed to write to file: {}", e)),
-                                Ok(nbytes) => {
-                                    if nbytes != dlen {
-                                        return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+            loop {
+                let read_res = fin.read(&mut buf);
+                match read_res {
+                    Err(e) => { return Err(format!("Read error: {}", e)) },
+                    Ok(num_read) => {
+                        //println!("read {} bytes",num_read);
+                        let enc_bytes = &buf[0 .. num_read];
+                        let eof = num_read == 0;
+                        let res = crypto.encrypt(enc_bytes, eof);
+                        match res {
+                            Err(e) => return Err(format!("Encryption error: {:?}", e)),
+                            Ok(d) => {
+                                let dlen = d.len();
+                                match fout.write(&d) {
+                                    Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                                    Ok(nbytes) => {
+                                        if nbytes != dlen {
+                                            return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                        }
                                     }
                                 }
                             }
                         }
+                        //println!("encrypted {} bytes",num_read);
+                        if eof {
+                            break;
+                        }
                     }
-                    //println!("encrypted {} bytes",num_read);
-                    if eof {
-                        break;
+                }
+            }
+        } else {
+            // for text files, read them in and normalized the line endings (use \r), so that
+            // the (decrypted) binary value is same on all platforms.  this is required for de-dup
+            // comparisons.  when unpacking to native on a target platform, we'll restore the
+            // proper line endings
+            let br = BufReader::new(fin);
+            let in_lines = br.lines();
+            let mut out_lines:Vec<String> = Vec::new();
+            for l in in_lines {
+                match l {
+                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                    Ok(l) => {
+                        out_lines.push(l.to_string());
+                    }
+                }
+            }
+
+            let line_buf = match util::canon_lines(&out_lines) {
+                Err(e) => return Err(format!("{}", e)),
+                Ok(buf) => buf
+            };
+
+            let enc_bytes = &line_buf[0 .. line_buf.len()];
+
+            match crypto.encrypt(enc_bytes, true) {
+                Err(e) => return Err(format!("Encryption error: {:?}", e)),
+                Ok(d) => {
+                    let dlen = d.len();
+                    match fout.write(&d) {
+                        Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                        Ok(nbytes) => {
+                            if nbytes != dlen {
+                                return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                            }
+                        }
                     }
                 }
             }
@@ -672,7 +740,56 @@ mod tests {
     }
 
     #[test]
-    // fails on mac, think its the line endings
+    fn write_read_binary_file() {
+        let wd = env::current_dir().unwrap();
+        let mut testpath = PathBuf::from(&wd);
+        testpath.push("testdata");
+        testpath.push("test_binary.png");
+
+        let in_bytes = util::slurp_bin_file(testpath.to_str().unwrap());
+
+        let mut conf = get_config();
+
+        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath) {
+            Err(e) => panic!("Error {:?}", e),
+            Ok((sfpath,_)) => sfpath
+        };
+        let sfpath = PathBuf::from(&sfpath);
+
+        let res = syncfile::SyncFile::from_syncfile(&conf,&sfpath);
+        match res {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(sf) => {
+                // remap the keyword var to the "nativedir" under testdata
+                let wds = wd.to_str().unwrap();
+                let mut outpath = PathBuf::from(&wds);
+                outpath.push("testdata");
+                outpath.push("out_nativedir");
+
+                let mapping = format!("gcprojroot = '{}'", outpath.to_str().unwrap());
+                let mapping = toml::Parser::new(&mapping).parse().unwrap();
+                let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
+                conf.mapping = mapping;
+
+                // reset native path
+                let mut sf = sf;
+
+                assert!(sf.set_nativefile_path(&conf).is_ok());
+                let res = sf.restore_native(&conf);
+                let outfile = {
+                    match res {
+                        Err(e) => panic!("Error {:?}", e),
+                        Ok(outfile) => outfile
+                    }
+                };
+
+                let out_bytes = util::slurp_bin_file(&outfile);
+                assert_eq!(in_bytes,out_bytes);
+            }
+        }
+    }
+
+    #[test]
     fn decrypt_to_mem() {
         let conf = get_config();
 

@@ -11,6 +11,7 @@ use std::os::unix::fs::MetadataExt;
 use std::env;
 use std::fs::File;
 use std::io::Read;
+use std::io::Write;
 
 use std::fs::{metadata};
 #[cfg(target_os = "windows")]
@@ -103,6 +104,20 @@ pub fn get_hostname() -> String {
 pub fn canon_path(p:&str) -> String {
     let res = p.replace("\\","/").to_string();
     res
+}
+
+// TODO: would be nice if this could take a Read object, or even a BufReader's Lines object,
+// but I can't figure how to make those work with the type system.
+pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>,String> {
+    let mut out_buf:Vec<u8> = Vec::new();
+
+    for l in lines {
+        match write!(out_buf, "{}\n",l) {
+            Err(e) => return Err(format!("Failed to write line string to stream buffer: {}", e)),
+            Ok(_) => ()
+        }
+    }
+    Ok(out_buf)
 }
 
 // TODO: should just use serialization
