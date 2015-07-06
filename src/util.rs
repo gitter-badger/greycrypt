@@ -172,9 +172,9 @@ pub fn get_appdata_dir() -> Option<String> {
 
 // this is a port of the git method.
 // http://stackoverflow.com/questions/6119956/how-to-determine-if-git-handles-a-file-as-binary-or-as-text
-pub fn file_is_binary(f:&str) -> io::Result<bool> {
+pub fn file_is_binary(fpath:&str) -> io::Result<bool> {
     let maxbytes = 8000;
-    let attr = try!(fs::metadata(f));
+    let attr = try!(fs::metadata(fpath));
     let len = attr.len();
     let maxbytes = if len < maxbytes { len } else { maxbytes };
     let maxbytes = maxbytes as usize;
@@ -182,10 +182,10 @@ pub fn file_is_binary(f:&str) -> io::Result<bool> {
     let mut v: Vec<u8> = vec![0;maxbytes];
     let mut buf = &mut v;
 
-    let mut f = try!(File::open(f));
+    let mut f = try!(File::open(fpath));
     let nbytes = try!(f.read(&mut buf));
     if nbytes < maxbytes {
-        return Err(io::Error::new(io::ErrorKind::Other, "Failed to read expected number of bytes from file"));
+        return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to read expected number of bytes from file: {}; want {}, got {}",fpath,maxbytes,nbytes)));
     } else {
         for i in 0 .. nbytes {
             if buf[i] == 0 {
