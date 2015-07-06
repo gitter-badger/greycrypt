@@ -391,20 +391,15 @@ impl SyncFile {
         } else {
             let mut temp_out:Vec<u8> = Vec::new();
             match self.decrypt_helper(conf,&mut temp_out) {
-                Err(e) => Err(e),
+                Err(e) => return Err(e),
                 Ok(_) => {
-                    let d = &temp_out[0 .. temp_out.len()];
-
-                    let br = BufReader::new(d);
-                    let in_lines = br.lines();
-                    for l in in_lines {
-                        match l {
-                            Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
-                            Ok(l) => {
-                                match writeln!(out,"{}",l) {
-                                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
-                                    Ok(_) => ()
-                                }
+                    //println!("dec: {:?}", String::from_utf8(temp_out.clone()).unwrap());
+                    match util::decanon_lines(&temp_out) {
+                        Err(e) => return Err(e),
+                        Ok(temp_out) => {
+                            match out.write(&temp_out) {
+                                Err(e) => return Err(format!("{:?}",e)),
+                                Ok(_) => ()
                             }
                         }
                     }
@@ -622,6 +617,8 @@ impl SyncFile {
 #[cfg(test)]
 mod tests {
     use std::env;
+    // use std::fs::File;
+    // use std::io::Write;
     use std::path::{PathBuf};
     use util;
     use config;
@@ -813,7 +810,16 @@ mod tests {
         match sf.decrypt_to_writer(&conf, &mut data) {
             Err(e) => panic!("Error {:?}", e),
             Ok(_) => {
+                println!("srclen: {}; datalen: {}", srctext.len(), data.len());
+
+                // uncomment to see what the data looks like in case this fails
+                // match File::create("testdata/temp.out") {
+                //     Err(e) => panic!("Error {:?}", e),
+                //     Ok(ref mut f) => { f.write(&data); () }
+                // }
                 assert_eq!(srctext,data);
+
+
             }
         }
     }

@@ -10,8 +10,7 @@ use std::os::unix::fs::MetadataExt;
 
 use std::env;
 use std::fs::File;
-use std::io::Read;
-use std::io::Write;
+use std::io::{Read, BufReader, Write, BufRead};
 
 use std::fs::{metadata};
 #[cfg(target_os = "windows")]
@@ -106,12 +105,58 @@ pub fn canon_path(p:&str) -> String {
     res
 }
 
+#[cfg(target_os = "windows")]
+const SEP:&'static str = "\r\n";
+
+#[cfg(not(target_os = "windows"))]
+const SEP:&'static str = "\n";
+
+// TODO: make this the composable with canon_lines once I figure out the Trait/Type issues
+// and make a sane interface.
+pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>,String> {
+    let mut out:Vec<u8> = Vec::new();
+    let data = &data[0 .. data.len()];
+
+    // writeln! always appears to write unix-endings, so...
+
+    let br = BufReader::new(data);
+    let in_lines = br.lines();
+    for l in in_lines {
+        match l {
+            Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+            Ok(l) => {
+                match write!(out,"{}{}",l,SEP) {
+                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                    Ok(_) => ()
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 // TODO: would be nice if this could take a Read object, or even a BufReader's Lines object,
 // but I can't figure how to make those work with the type system.
 pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>,String> {
     let mut out_buf:Vec<u8> = Vec::new();
 
+    // TODO: this string handling is abysmal.  #imdoingitwrongihope
+    let trim_end = |chars:&Vec<char>, count:usize| {
+        let mut s = String::new();
+        for i in 0 .. (chars.len() - count) {
+            s.push(chars[i])
+        }
+        s
+    };
+
     for l in lines {
+        // make sure line doesn't have any terminator residue
+        let chars:Vec<char> = l.chars().collect();
+
+        let l = if l.ends_with("\r\n") { trim_end(&chars,2) } else { l.to_string() };
+        let l = if l.ends_with("\n") { trim_end(&chars,1) } else { l.to_string() };
+        let l = if l.ends_with("\r") { trim_end(&chars,1) } else { l.to_string() };
+
         match write!(out_buf, "{}\n",l) {
             Err(e) => return Err(format!("Failed to write line string to stream buffer: {}", e)),
             Ok(_) => ()
