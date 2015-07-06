@@ -7,6 +7,7 @@ use util;
 use config;
 use crypto_util;
 
+use std::str::FromStr;
 use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
@@ -35,6 +36,7 @@ pub struct SyncFile {
     pub relpath: String,
     pub revguid: uuid::Uuid,
     pub nativefile: String,
+    pub is_binary: bool,
     sync_file_state: SyncFileState
 }
 
@@ -79,12 +81,18 @@ impl SyncFile {
 
         let idstr = SyncFile::get_sync_id(kw,&relpath);
 
+        let is_binary = match util::file_is_binary(nativefile) {
+            Err(e) => return Err(format!("Failed to check binary status: {:?}", e)),
+            Ok(isb) => isb
+        };
+
         let ret = SyncFile {
             id: idstr,
             keyword: kw.to_string(),
             relpath: relpath,
             revguid: uuid::Uuid::new_v4(),
             nativefile: nativefile.to_string(),
+            is_binary: is_binary,
             sync_file_state: SyncFileState::Closed
         };
 
@@ -245,6 +253,17 @@ impl SyncFile {
                 }
             }
         };
+        let is_binary = {
+            match mdmap.get("is_binary") {
+                None => return Err(format!("Key 'is_binary' is required in metadata")),
+                Some(v) => {
+                    match bool::from_str(v) {
+                        Err(e) => return Err(format!("Failed to parse is_binary bool: {}", e)),
+                        Ok(b) => b
+                    }
+                }
+            }
+        };
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
@@ -265,6 +284,7 @@ impl SyncFile {
             relpath: relpath,
             revguid: revguid,
             nativefile: "".to_string(),
+            is_binary: is_binary,
             sync_file_state: SyncFileState::Open(ofs)
         };
 
@@ -298,6 +318,7 @@ impl SyncFile {
         let _ = writeln!(v, "kw: {}", self.keyword);
         let _ = writeln!(v, "relpath: {}", self.relpath);
         let _ = writeln!(v, "revguid: {}", self.revguid);
+        let _ = writeln!(v, "is_binary: {}", self.is_binary);
     }
 
     pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
