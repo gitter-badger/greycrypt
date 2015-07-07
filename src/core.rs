@@ -258,7 +258,7 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     }
 }
 
-fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
+pub fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
     let sync_ext = "dat";
 
     let mut files_for_id:HashMap<String,Vec<String>> = HashMap::new();
@@ -403,7 +403,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
 pub fn dedup_syncfiles(state:&mut SyncState) {
     let mut files_for_id = find_all_syncfiles(state);
 
-    // sort by id for consisten ordering
+    // sort by id for consistent ordering
     let mut sids:Vec<String> = Vec::new();
     for (k,_) in &files_for_id {
         sids.push(k.to_string());
@@ -471,6 +471,8 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                         }
                     }
                 }
+            } else {
+                println!("conflicts: {}", sid)
             }
         }
 
@@ -532,7 +534,11 @@ pub fn do_sync(state:&mut SyncState) {
 
         // if its conflicted, skip
         if state.is_conflicted(&sid) {
-            println!("Skipping conflicted native file: {}", nf);
+            let cflicts = state.sync_files_for_id.get(&sid).unwrap();
+            println!("Skipping conflicted native file: {}:", nf);
+            for c in cflicts {
+                println!("   {  }", c);
+            }
             continue
         }
 

@@ -143,7 +143,7 @@ impl SyncFile {
         }
     }
 
-    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
+    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IVSIZE],HashMap<String,String>),String> {
         let key = match conf.encryption_key {
             None => return Err("No encryption key".to_string()),
             Some(k) => k
@@ -225,6 +225,30 @@ impl SyncFile {
                 mdmap.insert(k.to_lowercase(),v.to_string());
             }
             mdmap
+        };
+
+        // :(
+        // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
+        let mut iv_copy:[u8;IVSIZE] = [0;IVSIZE];
+        for i in 0..IVSIZE {
+            iv_copy[i] = iv[i]
+        }
+
+        Ok((fin,syncid.to_string(),iv_copy,mdmap))
+    }
+
+    pub fn get_metadata_hash(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<HashMap<String,String>,String> {
+        let (_,_,_,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
+            Err(e) => return Err(e),
+            Ok(stuff) => stuff
+        };
+        Ok(mdmap)
+    }
+
+    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
+        let (fin,syncid,iv,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
+            Err(e) => return Err(e),
+            Ok(stuff) => stuff
         };
 
         let keyword:String = {
@@ -314,11 +338,22 @@ impl SyncFile {
 
     fn pack_header(&self, v:&mut Vec<u8>) {
         let md_format_ver = 1;
+        // TODO: let _ is janky
+        // TODO: no panic (return on err)
         let _ = writeln!(v, "ver: {}", md_format_ver);
         let _ = writeln!(v, "kw: {}", self.keyword);
         let _ = writeln!(v, "relpath: {}", self.relpath);
         let _ = writeln!(v, "revguid: {}", self.revguid);
         let _ = writeln!(v, "is_binary: {}", self.is_binary);
+
+        // additional fields that aren't required for sync but are helpful for resolving conflicts
+        match util::get_file_mtime(&self.nativefile) {
+            Err(e) => panic!("{}",e),
+            Ok(mtime) => {
+                let _ = writeln!(v, "origin_native_mtime: {}", mtime);
+            }
+        }
+        let _ = writeln!(v, "origin_host: {}", util::get_hostname());
     }
 
     fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
