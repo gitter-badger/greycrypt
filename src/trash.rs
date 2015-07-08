@@ -1,14 +1,14 @@
 use std::ptr;
-use std::ffi::OsStr;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
+extern crate winapi;
 
 #[cfg(target_os = "macos")]
 use std::ffi::CString;
-
-#[cfg(target_os = "windows")]
-extern crate winapi;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
