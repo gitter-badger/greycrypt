@@ -129,7 +129,7 @@ impl SyncFile {
         Ok(lines)
     }
 
-    pub fn get_syncid_from_file(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<String,String> {
+    pub fn get_syncid_from_file(syncpath:&PathBuf) -> Result<String,String> {
         if !syncpath.is_file() {
             return Err(format!("Syncfile does not exist: {:?}", syncpath));
         }
@@ -248,7 +248,7 @@ impl SyncFile {
     }
 
     pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
-        let (fin,syncid,iv,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
+        let (fin,_,iv,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
         };
@@ -449,11 +449,9 @@ impl SyncFile {
 
     pub fn restore_native(&mut self, conf:&config::SyncConfig) -> Result<String,String> {
         { // check to make sure file is open, scoped to prevent borrow conflicts
-            let ofs = {
-                match self.sync_file_state {
-                    SyncFileState::Open(ref ofs) => ofs,
-                    _ => return Err("Sync file not open".to_string())
-                }
+            match self.sync_file_state {
+                SyncFileState::Open(ref ofs) => ofs,
+                _ => return Err("Sync file not open".to_string())
             };
         }
 
@@ -711,7 +709,7 @@ mod tests {
         };
         let sfpath = PathBuf::from(&sfpath);
 
-        let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&conf,&sfpath) {
+        let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&sfpath) {
             Err(e) => panic!("Error {:?}", e),
             Ok(id) => id
         };

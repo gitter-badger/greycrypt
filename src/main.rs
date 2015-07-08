@@ -75,8 +75,4 @@ fn main() {
         // run standard sync
         core::do_sync(&mut state);
     }
-
-
-
-
 }

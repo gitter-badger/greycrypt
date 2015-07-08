@@ -153,7 +153,7 @@ fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     // always use the path from the sync data struct, since it may have been remapped
     match syncfile::SyncFile::create_syncfile(&state.conf,&nativefile, Some(sd.syncfile.clone())) {
         Err(e) => panic!("Error creating sync file: {:?}", e),
-        Ok((ref sfpath,ref sf)) => {
+        Ok((_,ref sf)) => {
             // update sync db
             match state.syncdb.update(sf,native_mtime) {
                 Err(e) => panic!("Failed to update sync db: {:?}", e),
@@ -222,11 +222,11 @@ fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&Path
     let syncpath = syncfile.to_str().unwrap().to_string();
     let sf = load_syncfile_or_panic(state,&syncpath,&mut sf_data);
 
-    let (native_bytes,native_fname) = {
+    let native_bytes = {
         let fname = nativefile;
         if sf.is_binary {
             // TODO: would be nice to do this compare without slurping (big files = big memory)
-            (util::slurp_bin_file(&fname.to_str().unwrap()), fname)
+            util::slurp_bin_file(&fname.to_str().unwrap())
         } else {
             // TODO: this code is nastily duped from elsewhere because canon_lines has such a bad interface
 
@@ -234,7 +234,7 @@ fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&Path
             // in canonical form, so we need to read the native file and canonicalize it as well, then
             // compare.
             let fin = match File::open(fname) {
-                Err(e) => return Err(format!("Failed to open native file: {:?}", fname)),
+                Err(e) => return Err(format!("Failed to open native file: {:?}: {:?}", fname, e)),
                 Ok(f) => f
             };
 
@@ -243,7 +243,7 @@ fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&Path
             let mut out_lines:Vec<String> = Vec::new();
             for l in in_lines {
                 match l {
-                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                    Err(e) => return Err(format!("Failed to read line from alleged text source: {:?}: {}", fname, e)),
                     Ok(l) => {
                         out_lines.push(l.to_string());
                     }
@@ -251,10 +251,10 @@ fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&Path
             }
 
             let line_buf = match util::canon_lines(&out_lines) {
-                Err(e) => return Err(format!("Failed to read lines: {}", e)),
+                Err(e) => return Err(format!("Failed to read lines: {:?}: {}", fname, e)),
                 Ok(buf) => buf
             };
-            (line_buf, fname)
+            line_buf
         }
     };
 
@@ -279,7 +279,7 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
    };
 
    let (equal,sf) = match check_file_data_equal(state, &sd.syncfile, &native_fname) {
-       Err(e) => panic!("Error checking file data: {}, e"),
+       Err(e) => panic!("Error checking file data: {:?}: {}", native_fname, e),
        Ok(stuff) => stuff
    };
 
@@ -287,12 +287,12 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
        let native_fname = native_fname.to_str().unwrap();
        // update syncdb
        let native_mtime = match util::get_file_mtime(&native_fname) {
-           Err(e) => panic!("Error getting file mtime: {:?}", e),
+           Err(e) => panic!("Error getting file mtime: {:?}: {}", native_fname, e),
            Ok(mtime) => mtime
        };
 
        match state.syncdb.update(&sf,native_mtime) {
-           Err(e) => panic!("Failed to update sync db: {:?}", e),
+           Err(e) => panic!("Failed to update sync db: {:?}: {}", native_fname, e),
            Ok(_) => ()
        }
    } else {
@@ -305,23 +305,22 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
 
 fn do_update_native_file(sf:&mut syncfile::SyncFile, state:&mut SyncState) {
     let res = sf.restore_native(&state.conf);
-    let outfile = {
-        match res {
-            Err(e) => panic!("Error restoring native file: {:?}; {:?}", &sf.nativefile, e),
-            Ok(outfile) => {
-                // update syncdb
-                let native_mtime = match util::get_file_mtime(&sf.nativefile) {
-                    Err(e) => panic!("Error getting file mtime: {:?}", e),
-                    Ok(mtime) => mtime
-                };
 
-                match state.syncdb.update(sf,native_mtime) {
-                    Err(e) => panic!("Failed to update sync db: {:?}", e),
-                    Ok(_) => ()
-                }
+    match res {
+        Err(e) => panic!("Error restoring native file: {:?}; {:?}", &sf.nativefile, e),
+        Ok(_) => {
+            // update syncdb
+            let native_mtime = match util::get_file_mtime(&sf.nativefile) {
+                Err(e) => panic!("Error getting file mtime: {:?}; {:?}", &sf.nativefile, e),
+                Ok(mtime) => mtime
+            };
 
-                println!("Wrote new file: {:?}", &sf.nativefile);
+            match state.syncdb.update(sf,native_mtime) {
+                Err(e) => panic!("Failed to update sync db: {:?}; {:?}", &sf.nativefile, e),
+                Ok(_) => ()
             }
+
+            println!("Wrote new file: {:?}", &sf.nativefile);
         }
     };
 }
@@ -354,6 +353,9 @@ fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     }
 }
 fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
+    // this function doesn't do anything with state ATM, but it is required for the pass interface.
+    // silence warning
+    let _ = state;
     match *sa {
         SyncAction::Nothing
         | SyncAction::UpdateSyncfile(_)
@@ -393,7 +395,7 @@ pub fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
 
             // have to read at least the first line to get the syncid.  can't trust the
             // filename because it could have been renamed.
-            let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&pb) {
+            let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&pb) {
                 Err(e) => panic!("Error {:?}", e),
                 Ok(id) => id
             };
@@ -616,7 +618,7 @@ pub fn do_sync(state:&mut SyncState) {
                     if pat.matches_path(pb) {
                         //println!("ignoring: {:?}", pb);
                         return;
-                    } 
+                    }
                 }
                 native_files.insert(pb.to_str().unwrap().to_string());
             };
@@ -702,7 +704,7 @@ pub fn do_sync(state:&mut SyncState) {
         // sid is base filename without extension (assuming we are ignoring google " (1)" files)
 
         let syncfile = PathBuf::from(sf);
-        let sid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&syncfile) {
+        let sid = match syncfile::SyncFile::get_syncid_from_file(&syncfile) {
             Err(e) => panic!("Can't get syncid from file: {}", e),
             Ok(sid) => sid
         };
@@ -746,6 +748,13 @@ pub fn do_sync(state:&mut SyncState) {
     let actions = process_actions(state, &actions, &mut pass1_prep);
     let actions = process_actions(state, &actions, &mut pass2_verify);
     let actions = process_actions(state, &actions, &mut pass3_commit);
+
+    for (sid,action) in actions {
+        match action {
+            SyncAction::Nothing => (),
+            _ => println!("Warning: leftover action in list: {:?} for {:?}", action, sid)
+        }
+    }
 }
 
 #[cfg(test)]

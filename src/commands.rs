@@ -16,7 +16,7 @@ pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
     };
 
     let mut keys:Vec<String> = Vec::new();
-    for (k,v) in &mdhash {
+    for (k,_) in &mdhash {
         keys.push(k.to_string());
     }
     keys.sort();
