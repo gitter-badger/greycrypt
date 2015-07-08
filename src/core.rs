@@ -207,7 +207,7 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
            None => panic!("Native file required"),
            Some(ref fname) => fname
        };
-       if (sf.is_binary) {
+       if sf.is_binary {
            // TODO: would be nice to do this compare without slurping (big files = big memory)
            (util::slurp_bin_file(&fname.to_str().unwrap()), fname)
        } else {
@@ -244,7 +244,7 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
    let native_bytes = &native_bytes[0 .. native_bytes.len()];
    let sf_bytes = &sf_data[0 .. sf_data.len()];
 
-   if (native_bytes == sf_bytes) {
+   if native_bytes == sf_bytes {
        let native_fname = native_fname.to_str().unwrap();
        // update syncdb
        let native_mtime = match util::get_file_mtime(&native_fname) {

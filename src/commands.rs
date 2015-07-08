@@ -1,13 +1,11 @@
-use std::fs::{PathExt,remove_file,remove_dir,read_dir};
-use std::path::{Path,PathBuf};
-use std::collections::HashSet;
-use std::collections::HashMap;
-use std::cmp::Ordering;
+//use std::fs::{PathExt,remove_file,remove_dir,read_dir};
+use std::path::{PathBuf};
+// use std::collections::HashSet;
+// use std::collections::HashMap;
+// use std::cmp::Ordering;
 
-use util;
-use config;
+
 use syncfile;
-use syncdb;
 use core;
 
 pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
