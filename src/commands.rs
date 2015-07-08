@@ -25,18 +25,6 @@ pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
         println!("{}: {}", k, v);
     }
 
-
-    //
-    //
-    //
-    // println!("id: {}", sf.id);
-    // println!("keyword: {}", sf.keyword);
-    // println!("relpath: {}", sf.relpath);
-    // println!("revguid: {}", sf.revguid);
-    // println!("target native file: {}", sf.nativefile);
-    // println!("binary: {}", sf.is_binary);
-
-
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&syncpath) {
         Err(e) => panic!("Failed to read syncfile: {:?}", e),
         Ok(sf) => sf
@@ -58,23 +46,11 @@ pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
         Err(e) => panic!("Error {:?}", e),
         Ok(_) => {
             println!("decrypted size: {}", data.len());
-            //println!("srclen: {}; datalen: {}", srctext.len(), data.len());
 
             if !sf.is_binary {
                 println!("text:");
                 println!("{}", String::from_utf8(data).unwrap());
             }
-
-
-
-            // uncomment to see what the data looks like in case this fails
-            // match File::create("testdata/temp.out") {
-            //     Err(e) => panic!("Error {:?}", e),
-            //     Ok(ref mut f) => { f.write(&data); () }
-            // }
-            //assert_eq!(srctext,data);
-
-
         }
     }
 }
