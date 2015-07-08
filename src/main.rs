@@ -14,6 +14,7 @@ mod crypto_util;
 mod syncdb;
 mod core;
 mod commands;
+mod trash;
 
 use std::collections::HashMap;
 
