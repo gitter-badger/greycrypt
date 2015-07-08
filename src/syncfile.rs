@@ -49,8 +49,10 @@ impl SyncFile {
         hasher.result_str()
     }
 
-    // TODO: this may need to go away.  can't really make a determination about the syncpath
-    // without knowing the current syncdir state.
+    // Return the sync id and syncfile path for a given native file.  Note, the path in
+    // particular is a "default" setting, in a real sync scenario, it may be renamed based
+    // on network sync state.  This is handled by the option parameter to create_syncfile()
+    // below.
     pub fn get_sync_id_and_path(conf:&config::SyncConfig, nativefile: &str) -> Result<(String,PathBuf),String> {
         let (kw,relpath) = {
             let res = conf.mapping.get_kw_relpath(nativefile);
@@ -487,10 +489,15 @@ impl SyncFile {
         Ok(outpath.to_string())
     }
 
-    pub fn read_native_and_save(&self, conf:&config::SyncConfig) -> Result<String,String> {
+    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
         let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
+        };
+
+        let outpath = match override_path {
+            None => outpath,
+            Some(path) => path
         };
 
         let outpath_par = outpath.parent().unwrap();
@@ -634,14 +641,14 @@ impl SyncFile {
         Ok(outname.to_string())
     }
 
-    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf) -> Result<(String,SyncFile),String> {
+    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf, override_path: Option<PathBuf>) -> Result<(String,SyncFile),String> {
         let res = SyncFile::from_native(&conf, nativepath.to_str().unwrap());
         let sf = match res {
             Err(e) => return Err(format!("Failed to create sync file: {:?}", e)),
             Ok(sf) => sf
         };
 
-        let res = sf.read_native_and_save(&conf);
+        let res = sf.read_native_and_save(&conf, override_path);
         match res {
             Err(e) => return Err(format!("Failed to update sync file with native data: {:?}", e)),
             Ok(sfpath) => Ok((sfpath,sf))
@@ -698,7 +705,7 @@ mod tests {
 
         let mut conf = get_config();
 
-        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath) {
+        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath,None) {
             Err(e) => panic!("Error {:?}", e),
             Ok((sfpath,_)) => sfpath
         };
@@ -782,7 +789,7 @@ mod tests {
 
         let mut conf = get_config();
 
-        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath) {
+        let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath,None) {
             Err(e) => panic!("Error {:?}", e),
             Ok((sfpath,_)) => sfpath
         };
@@ -845,7 +852,7 @@ mod tests {
         match sf.decrypt_to_writer(&conf, &mut data) {
             Err(e) => panic!("Error {:?}", e),
             Ok(_) => {
-                println!("srclen: {}; datalen: {}", srctext.len(), data.len());
+                //println!("srclen: {}; datalen: {}", srctext.len(), data.len());
 
                 // uncomment to see what the data looks like in case this fails
                 // match File::create("testdata/temp.out") {

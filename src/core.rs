@@ -126,7 +126,8 @@ fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Ok(mtime) => mtime
     };
 
-    match syncfile::SyncFile::create_syncfile(&state.conf,&nativefile) {
+    // always use the path from the sync data struct, since it may have been remapped
+    match syncfile::SyncFile::create_syncfile(&state.conf,&nativefile, Some(sd.syncfile.clone())) {
         Err(e) => panic!("Error creating sync file: {:?}", e),
         Ok((ref sfpath,ref sf)) => {
             // update sync db
@@ -620,7 +621,7 @@ pub fn do_sync(state:&mut SyncState) {
             continue
         }
 
-        // the syncfile may have been remapped, check state
+        // the syncfile name may have been remapped, check state
         let syncfile = {
             match state.sync_files_for_id.get(&sid) {
                 None => syncfile,
