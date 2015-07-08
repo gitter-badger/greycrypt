@@ -10,6 +10,8 @@ use config;
 use syncfile;
 use syncdb;
 
+extern crate glob;
+
 #[derive(Debug,Clone)]
 struct SyncData {
     syncid: String,
@@ -601,11 +603,21 @@ pub fn do_sync(state:&mut SyncState) {
 
     state.sync_files_for_id = find_all_syncfiles(state);
 
+    let global_ignore = vec![
+        glob::Pattern::new("**/.DS_Store").unwrap() // for a fun time click here: https://github.com/search?utf8=%E2%9C%93&q=.DS_Store&ref=simplesearch
+        ];
+
     let native_files = {
         // use hashset for path de-dup (TODO: but what about case differences?)
         let mut native_files = HashSet::new();
         {
             let mut visitor = |pb: &PathBuf| {
+                for pat in &global_ignore {
+                    if pat.matches_path(pb) {
+                        //println!("ignoring: {:?}", pb);
+                        return;
+                    } 
+                }
                 native_files.insert(pb.to_str().unwrap().to_string());
             };
 
@@ -630,7 +642,6 @@ pub fn do_sync(state:&mut SyncState) {
         native_files
     };
 
-    //let mut actions:Vec<SyncAction> = Vec::new();
     let mut actions:HashMap<String,SyncAction> = HashMap::new();
 
     // scan native files
