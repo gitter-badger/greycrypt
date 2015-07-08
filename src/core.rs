@@ -1,4 +1,5 @@
-use std::fs::{PathExt,remove_file,remove_dir,read_dir};
+use std::fs::{PathExt,remove_file,remove_dir,read_dir,File};
+use std::io::{BufReader,BufRead};
 use std::path::{Path,PathBuf};
 use std::collections::HashSet;
 use std::collections::HashMap;
@@ -23,7 +24,8 @@ enum SyncAction {
     UpdateSyncfile(SyncData),
     UpdateNativeFile(SyncData),
     CreateNewNativeFile(SyncData),
-    CheckSyncRevguid(SyncData)
+    CheckSyncRevguid(SyncData),
+    CheckFilesEqualElseConflict(SyncData)
 }
 
 pub struct SyncState {
@@ -58,7 +60,9 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Ok(sf) => sf
     };
     let sync_entry = match state.syncdb.get(&sf) {
-        None => panic!("File should have an entry in syncdb, but does not: {:?}", &sd.syncfile),
+        None => {
+            return SyncAction::CheckFilesEqualElseConflict(sd.clone());
+        }
         Some(entry) => entry
     };
 
@@ -188,6 +192,77 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     }
 }
 
+fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+   // This will happen if we start syncing on a new machine, and it already has a copy
+   // of the native file.  If the file contents are an exact match, we can ignore this
+   // and just update the local syncdb.  Otherwise, its a conflict.
+
+   let mut sf_data:Vec<u8> = Vec::new();
+   let syncpath = sd.syncfile.to_str().unwrap().to_string();
+   let sf = load_syncfile_or_panic(state,&syncpath,&mut sf_data);
+
+   let (native_bytes,native_fname) = {
+       let fname = match sd.nativefile {
+           None => panic!("Native file required"),
+           Some(ref fname) => fname
+       };
+       if (sf.is_binary) {
+           // TODO: would be nice to do this compare without slurping (big files = big memory)
+           (util::slurp_bin_file(&fname.to_str().unwrap()), fname)
+       } else {
+           // TODO: this code is nastily duped from elsewhere because canon_lines has such a bad interface
+
+           // For text files, we want to compare ignoring line endings.  The syncfile will have them
+           // in canonical form, so we need to read the native file and canonicalize it as well, then
+           // compare.
+           let fin = match File::open(fname) {
+               Err(e) => panic!("Failed to open native file: {:?}", fname),
+               Ok(f) => f
+           };
+
+           let br = BufReader::new(fin);
+           let in_lines = br.lines();
+           let mut out_lines:Vec<String> = Vec::new();
+           for l in in_lines {
+               match l {
+                   Err(e) => panic!("Failed to read line from alleged text source: {}", e),
+                   Ok(l) => {
+                       out_lines.push(l.to_string());
+                   }
+               }
+           }
+
+           let line_buf = match util::canon_lines(&out_lines) {
+               Err(e) => panic!("Failed to read lines: {}", e),
+               Ok(buf) => buf
+           };
+           (line_buf, fname)
+       }
+   };
+
+   let native_bytes = &native_bytes[0 .. native_bytes.len()];
+   let sf_bytes = &sf_data[0 .. sf_data.len()];
+
+   if (native_bytes == sf_bytes) {
+       let native_fname = native_fname.to_str().unwrap();
+       // update syncdb
+       let native_mtime = match util::get_file_mtime(&native_fname) {
+           Err(e) => panic!("Error getting file mtime: {:?}", e),
+           Ok(mtime) => mtime
+       };
+
+       match state.syncdb.update(&sf,native_mtime) {
+           Err(e) => panic!("Failed to update sync db: {:?}", e),
+           Ok(_) => ()
+       }
+   } else {
+       println!("Conflict detected on {:?}, local data differs from remote.  Try renaming local file and resyncing to restore remote data.", native_fname);
+   }
+
+   SyncAction::Nothing
+}
+
+
 fn do_update_native_file(sf:&mut syncfile::SyncFile, state:&mut SyncState) {
     let res = sf.restore_native(&state.conf);
     let outfile = {
@@ -233,6 +308,7 @@ fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::Nothing
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
+        | SyncAction::CheckFilesEqualElseConflict(_)
         | SyncAction::CreateNewNativeFile(_) => sa.clone()  // don't do this in pass1
 
     }
@@ -242,6 +318,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::Nothing
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
+        | SyncAction::CheckFilesEqualElseConflict(_)
         | SyncAction::CreateNewNativeFile(_) => sa.clone(),
         SyncAction::CompareSyncState(_)
         | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
@@ -250,6 +327,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
 fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing => sa.clone(),
+        SyncAction::CheckFilesEqualElseConflict(ref sd) => check_files_equal_else_conflict(state,sd),
         SyncAction::UpdateNativeFile(ref sd) => update_native_file(state,sd),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
         SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd),
@@ -587,7 +665,8 @@ pub fn do_sync(state:&mut SyncState) {
                 None => (),
                 Some(action) => {
                     match *action {
-                        SyncAction::CompareSyncState(_) => continue, // skip
+                        SyncAction::CheckFilesEqualElseConflict(_)
+                        | SyncAction::CompareSyncState(_) => continue, // skip
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
                         SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
                         SyncAction::Nothing => (),
