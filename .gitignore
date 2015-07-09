@@ -3,3 +3,4 @@ compiletimes/
 testdata/out_syncdb/
 testdata/out_nativedir/
 testdata/out_syncdir/
+testdata/out_scratch

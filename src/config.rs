@@ -7,10 +7,12 @@ extern crate toml;
 use util;
 use mapping;
 
+pub const KEY_SIZE: usize = 32;
+
 pub struct SyncConfig {
     pub sync_dir: String,
     pub mapping: mapping::Mapping,
-    pub encryption_key: Option<[u8; 32]>,
+    pub encryption_key: Option<[u8; KEY_SIZE]>,
     pub syncdb_dir: Option<String>,
     pub native_paths: Vec<String>
 }
@@ -112,9 +114,9 @@ pub fn parse() -> SyncConfig {
     };
 
     // TODO: at some point I'm going to have to get this from somewhere!
-    let mut ec: [u8;32] = [0; 32];
+    let mut ec: [u8;KEY_SIZE] = [0; KEY_SIZE];
     let mut next:u8 = 55;
-    for i in 0..32 {
+    for i in 0..KEY_SIZE {
         ec[i] = next;
         next = next + 1;
     }

@@ -19,12 +19,12 @@ use self::crypto::sha2::Sha256;
 use self::rand::{ Rng, OsRng };
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
-const IVSIZE: usize = 16;
+const IV_SIZE: usize = 16;
 
 struct OpenFileState {
     handle: File,
     //iv: &'a [u8]
-    iv: [u8;IVSIZE]
+    iv: [u8;IV_SIZE]
 }
 enum SyncFileState {
     Closed,
@@ -37,6 +37,7 @@ pub struct SyncFile {
     pub revguid: uuid::Uuid,
     pub nativefile: String,
     pub is_binary: bool,
+    pub is_deleted: bool,
     sync_file_state: SyncFileState
 }
 
@@ -95,6 +96,7 @@ impl SyncFile {
             revguid: uuid::Uuid::new_v4(),
             nativefile: nativefile.to_string(),
             is_binary: is_binary,
+            is_deleted: false,
             sync_file_state: SyncFileState::Closed
         };
 
@@ -145,7 +147,7 @@ impl SyncFile {
         }
     }
 
-    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IVSIZE],HashMap<String,String>),String> {
+    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>),String> {
         let key = match conf.encryption_key {
             None => return Err("No encryption key".to_string()),
             Some(k) => k
@@ -182,7 +184,7 @@ impl SyncFile {
             Err(e) => return Err(format!("Unable to parse IV line: {}", e)),
             Ok(iv) => iv
         };
-        if iv.len() != IVSIZE {
+        if iv.len() != IV_SIZE {
             return Err(format!("Unexpected IV length: {}", iv.len()));
         }
 
@@ -231,8 +233,8 @@ impl SyncFile {
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
-        let mut iv_copy:[u8;IVSIZE] = [0;IVSIZE];
-        for i in 0..IVSIZE {
+        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];
+        for i in 0..IV_SIZE {
             iv_copy[i] = iv[i]
         }
 
@@ -253,6 +255,7 @@ impl SyncFile {
             Ok(stuff) => stuff
         };
 
+        // TODO: surely this unpacking code can be cut down in size alot
         let keyword:String = {
             let v = mdmap.get("kw");
             match v {
@@ -290,11 +293,24 @@ impl SyncFile {
                 }
             }
         };
+        let is_deleted = {
+            match mdmap.get("is_deleted") {
+                // if it ain't there it ain't deleted
+                None => false,
+                Some(v) => {
+                    match bool::from_str(v) {
+                        Err(e) => return Err(format!("Failed to parse is_deleted bool: {}", e)),
+                        Ok(b) => b
+                    }
+                }
+            }
+        };
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
-        let mut iv_copy:[u8;IVSIZE] = [0;IVSIZE];
-        for i in 0..IVSIZE {
+        // TODO: there must be a better way. THE TRUTH IS OUT THERE.
+        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];
+        for i in 0..IV_SIZE {
             iv_copy[i] = iv[i]
         }
         let ofs = OpenFileState {
@@ -311,6 +327,7 @@ impl SyncFile {
             revguid: revguid,
             nativefile: "".to_string(),
             is_binary: is_binary,
+            is_deleted: is_deleted,
             sync_file_state: SyncFileState::Open(ofs)
         };
 
@@ -338,7 +355,7 @@ impl SyncFile {
         }
     }
 
-    fn pack_header(&self, v:&mut Vec<u8>) {
+    fn pack_metadata(&self, v:&mut Vec<u8>) {
         let md_format_ver = 1;
         // TODO: let _ is janky
         // TODO: no panic (return on err)
@@ -347,6 +364,7 @@ impl SyncFile {
         let _ = writeln!(v, "relpath: {}", self.relpath);
         let _ = writeln!(v, "revguid: {}", self.revguid);
         let _ = writeln!(v, "is_binary: {}", self.is_binary);
+        let _ = writeln!(v, "is_deleted: {}", self.is_deleted);
 
         // additional fields that aren't required for sync but are helpful for resolving conflicts
         match util::get_file_mtime(&self.nativefile) {
@@ -477,7 +495,6 @@ impl SyncFile {
             Err(e) => return Err(format!("Failed to create output file: {:?}: {:?}", outpath, e)),
             Ok(f) => f
         };
-        //let mut fout = BufWriter::new(fout);
 
         match self.decrypt_to_writer(conf,&mut fout) {
             Err(e) => return Err(format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
@@ -487,7 +504,9 @@ impl SyncFile {
         Ok(outpath.to_string())
     }
 
-    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
+    fn write_syncfile_header(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) ->
+    // Ret (outpath,outhandle,iv,key)
+    Result<(String,File,[u8;IV_SIZE],[u8;config::KEY_SIZE]),String> {
         let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
@@ -520,24 +539,27 @@ impl SyncFile {
 
         // create random iv
         let mut rng = OsRng::new().ok().unwrap();
-        let mut iv: [u8; 16] = [0; 16];
+        let mut iv: [u8; IV_SIZE] = [0; IV_SIZE];
         rng.fill_bytes(&mut iv);
 
         // make crypto helper
-        let key:&[u8] = &key;
-        let iv:&[u8] = &iv;
-        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
 
         // write sync id to file (unencrypted)
-        // TODO: get rid of these _
-        let _ = writeln!(fout, "{}", sid);
+        match writeln!(fout, "{}", sid) {
+            Err(e) => return Err(format!("Failed to write sid: {}", e)),
+            Ok(_) => ()
+        }
 
         // write iv to file (unencrypted, base64 encoded)
-        let _ = writeln!(fout, "{}", iv.to_base64(STANDARD));
+        match writeln!(fout, "{}", iv.to_base64(STANDARD)) {
+            Err(e) => return Err(format!("Failed to write iv: {}", e)),
+            Ok(_) => ()
+        }
 
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
-        self.pack_header(&mut v);
+        self.pack_metadata(&mut v);
 
         // pass true to signal EOF so that the metadata can be decrypted without needing to read
         // the whole file.
@@ -547,12 +569,34 @@ impl SyncFile {
             Err(e) => return Err(format!("Encryption error: {:?}", e)),
             Ok(d) => {
                 let b64_out = d[..].to_base64(STANDARD);
-                let _ = writeln!(fout, "{}", b64_out);
+                match writeln!(fout, "{}", b64_out) {
+                    Err(e) => return Err(format!("Failed to write metadata: {}", e)),
+                    Ok(_) => ()
+                }
             }
         }
 
+        Ok((outname.to_string(),fout,iv,key))
+    }
+
+    pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
+        self.is_deleted = true;
+        let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
+            Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
+            Ok(stuff) => stuff
+        };
+        Ok(outname)
+    }
+
+    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
+        let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
+            Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
+            Ok(stuff) => stuff
+        };
+        let mut fout = fout;
+
         // remake crypto helper for file data
-        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
+        let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(&self.nativefile) {
@@ -680,7 +724,7 @@ mod tests {
         outpath.push("testdata");
         outpath.push("out_syncdir");
 
-        let ec: [u8;32] = [0; 32];
+        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig {
             sync_dir: outpath.to_str().unwrap().to_string(),
@@ -725,6 +769,8 @@ mod tests {
                 assert_eq!(sf.relpath, "/testdata/test_native_file.txt");
                 // revguid could be anything, but if it wasn't a guid we would already have failed
                 assert_eq!(sf.nativefile, savetp);
+                assert_eq!(sf.is_binary, false);
+                assert_eq!(sf.is_deleted, false);
                 // file should be open
                 match sf.sync_file_state {
                     syncfile::SyncFileState::Open(ref ofs) => {
@@ -732,10 +778,10 @@ mod tests {
                         // iv should be non-null (though its possible that it could
                         // be randomly all zeros, that should be very rare)
                         let mut zcount = 0;
-                        for x in 0..syncfile::IVSIZE {
+                        for x in 0..syncfile::IV_SIZE {
                             if ofs.iv[x] == 0 { zcount = zcount + 1 }
                         }
-                        assert!(zcount != syncfile::IVSIZE)
+                        assert!(zcount != syncfile::IV_SIZE)
                     },
                     _ => panic!("Unexpected file state")
                 }
@@ -789,7 +835,10 @@ mod tests {
 
         let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath,None) {
             Err(e) => panic!("Error {:?}", e),
-            Ok((sfpath,_)) => sfpath
+            Ok((sfpath,sf)) => {
+                assert!(sf.is_binary);
+                sfpath
+            }
         };
         let sfpath = PathBuf::from(&sfpath);
 
@@ -797,6 +846,8 @@ mod tests {
         match res {
             Err(e) => panic!("Error {:?}", e),
             Ok(sf) => {
+                assert!(sf.is_binary);
+
                 // remap the keyword var to the "nativedir" under testdata
                 let wds = wd.to_str().unwrap();
                 let mut outpath = PathBuf::from(&wds);
@@ -860,6 +911,50 @@ mod tests {
                 assert_eq!(srctext,data);
 
 
+            }
+        }
+    }
+
+    #[test]
+    fn deleted() {
+        let conf = get_config();
+        let wd = env::current_dir().unwrap();
+
+        let readit = |path| {
+            let sf = match syncfile::SyncFile::from_syncfile(&conf,&path) {
+                Err(e) => panic!("Failed to read syncfile: {:?}", e),
+                Ok(sf) => sf
+            };
+            sf
+        };
+
+        let mut sf = {
+            let mut syncpath = PathBuf::from(&wd);
+            syncpath.push("testdata");
+            syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+
+            readit(syncpath)
+        };
+
+        let mut syncpath = PathBuf::from(&wd);
+        syncpath.push("testdata");
+        syncpath.push("out_scratch");
+        syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+
+        match sf.mark_deleted_and_save(&conf,Some(syncpath.clone())) {
+            Err(e) => panic!("Failed to write syncfile: {:?}", e),
+            Ok(_) => ()
+        };
+
+        let mut sf = readit(syncpath);
+        assert!(sf.is_deleted);
+
+        // should have no data
+        let mut data:Vec<u8> = Vec::new();
+        match sf.decrypt_to_writer(&conf, &mut data) {
+            Err(e) => panic!("Error {:?}", e),
+            Ok(_) => {
+                assert_eq!(0,data.len());
             }
         }
     }

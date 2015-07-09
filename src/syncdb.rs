@@ -183,7 +183,7 @@ mod tests {
         syncdb_dir.push("testdata");
         syncdb_dir.push("out_syncdb");
 
-        let ec: [u8;32] = [0; 32];
+        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig {
             sync_dir: outpath.to_str().unwrap().to_string(),
