@@ -1,4 +1,6 @@
 use std::ptr;
+
+#[cfg(target_os = "windows")]
 use std::ffi::OsStr;
 
 #[cfg(target_os = "windows")]
@@ -81,7 +83,7 @@ pub fn send_to_trash(f:&str) -> Result<(),String> {
     let mut fsref = FSRef { hidden: [0;80] };
 
     let make_ref_dont_follow_leaf_symlink = 1 as i32;
-    
+
     let opts = make_ref_dont_follow_leaf_symlink;
 
     let path = CString::new(f).unwrap();
