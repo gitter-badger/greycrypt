@@ -175,6 +175,12 @@ impl SyncFile {
             match SyncFile::read_top_lines(&fin,3) {
                 Err(e) => return Err(e),
                 Ok(lines) => {
+                    // if any are empty, its an error
+                    for l in &lines {
+                        if l.trim() == "" {
+                            return Err(format!("Found empty line in syncfile, file is invalid: {:?}; may need to be removed", syncpath))
+                        }
+                    }
                     (lines[0].clone(), lines[1].clone(), lines[2].clone())
                 }
             }
@@ -367,12 +373,17 @@ impl SyncFile {
         let _ = writeln!(v, "is_deleted: {}", self.is_deleted);
 
         // additional fields that aren't required for sync but are helpful for resolving conflicts
-        match util::get_file_mtime(&self.nativefile) {
-            Err(e) => panic!("{}",e),
-            Ok(mtime) => {
-                let _ = writeln!(v, "origin_native_mtime: {}", mtime);
+        let mtime = {
+            if !self.is_deleted {
+                match util::get_file_mtime(&self.nativefile) {
+                    Err(e) => panic!("Failed to obtain mtime: {}",e),
+                    Ok(mtime) => mtime
+                }
+            } else {
+                0
             }
-        }
+        };
+        let _ = writeln!(v, "origin_native_mtime: {}", mtime);
         let _ = writeln!(v, "origin_host: {}", util::get_hostname());
     }
 

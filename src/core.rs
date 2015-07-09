@@ -9,6 +9,7 @@ use util;
 use config;
 use syncfile;
 use syncdb;
+use trash;
 
 extern crate glob;
 
@@ -25,6 +26,7 @@ enum SyncAction {
     CompareSyncState(SyncData),
     UpdateSyncfile(SyncData),
     UpdateNativeFile(SyncData),
+    ProcessNativeDelete(SyncData),
     CreateNewNativeFile(SyncData),
     CheckSyncRevguid(SyncData),
     CheckFilesEqualElseConflict(SyncData)
@@ -190,6 +192,14 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     let sync_entry = state.syncdb.get(&sf);
 
+    // if the sf is deleted, we are done (no native file to delete)
+    if sf.is_deleted {
+        if !sync_entry.is_none() && sync_entry.unwrap().revguid != sf.revguid {
+            println!("Ignoring deleted syncfile with no corresponding native file: {:?}", &sd.syncid);
+        }
+        return SyncAction::Nothing;
+    }
+
     let new_sync_file = sync_entry.is_none() || sync_entry.unwrap().revguid != sf.revguid;
 
     if new_sync_file {
@@ -202,18 +212,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         // in the first place if the unpack directory is keyword-mapped)
         println!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
 
-        // So, what we should do here is update the syncfile and set "Deleted", possibly with a
-        // deletion time, in its metadata.
-        // Other systems will need to handle that, both in CheckSyncRevguid and CompareSyncState.
-        // If a file is deleted, they should remove/recycle the native file.  Unfortunately, with this method,
-        // there is no way to know when everybody has processed the delete, so we have to leave the
-        // sync file out there as a marker indefinitely (we will expunge the encrypted data, so at least
-        // it small).  May want to implement some sort of time based garbage collection option.
-        // Or a delete count in the file so the user can see how many systems processed the delete in some
-        // kind of control panel.
-
-        // for now, nothing.
-        SyncAction::Nothing
+        SyncAction::ProcessNativeDelete(sd.clone())
     }
 }
 
@@ -340,11 +339,51 @@ fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     SyncAction::Nothing
 }
 
+fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+    // So, what we should do here is update the syncfile and set "Deleted", possibly with a
+    // deletion time, in its metadata.
+    // Other systems will need to handle that, both in CheckSyncRevguid and CompareSyncState.
+    // If a file is deleted, they should remove/recycle the native file.  Unfortunately, with this method,
+    // there is no way to know when everybody has processed the delete, so we have to leave the
+    // sync file out there as a marker indefinitely (we will expunge the encrypted data, so at least
+    // it small).  May want to implement some sort of time based garbage collection option.
+    // Or a delete count in the file so the user can see how many systems processed the delete in some
+    // kind of control panel.
+    let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+    // normally the native path will be gone already, but just in case...
+    let nativefile_path = PathBuf::from(&sf.nativefile);
+    if nativefile_path.is_file() {
+        println!("Sending deleted local file to Trash: {}", &sf.nativefile);
+        match trash::send_to_trash(&sf.nativefile) {
+            Err(e) => panic!("Failed to trash file: {:?}", e),
+            Ok(_) => ()
+        }
+    }
+    match sf.mark_deleted_and_save(&state.conf,Some(sd.syncfile.clone())) {
+        Err(e) => panic!("Failed to write syncfile: {:?}", e),
+        Ok(_) => ()
+    };
+
+    // update syncdb
+    let native_mtime = 0;
+
+    match state.syncdb.update(&sf,native_mtime) {
+        Err(e) => panic!("Failed to update sync db: {:?}; {:?}", &sf.nativefile, e),
+        Ok(_) => ()
+    }
+
+    SyncAction::Nothing
+}
+
 fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::CompareSyncState(ref sd) => compare_sync_state(state,sd),
         SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
         SyncAction::Nothing
+        | SyncAction::ProcessNativeDelete(_)
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
         | SyncAction::CheckFilesEqualElseConflict(_)
@@ -358,6 +397,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     let _ = state;
     match *sa {
         SyncAction::Nothing
+        | SyncAction::ProcessNativeDelete(_)
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
         | SyncAction::CheckFilesEqualElseConflict(_)
@@ -373,6 +413,7 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::UpdateNativeFile(ref sd) => update_native_file(state,sd),
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
         SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd),
+        SyncAction::ProcessNativeDelete(ref sd) => process_native_delete(state,sd),
         SyncAction::CompareSyncState(_)
         | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
     }
@@ -701,8 +742,6 @@ pub fn do_sync(state:&mut SyncState) {
     }
 
     for sf in &sync_files {
-        // sid is base filename without extension (assuming we are ignoring google " (1)" files)
-
         let syncfile = PathBuf::from(sf);
         let sid = match syncfile::SyncFile::get_syncid_from_file(&syncfile) {
             Err(e) => panic!("Can't get syncid from file: {}", e),
@@ -720,6 +759,7 @@ pub fn do_sync(state:&mut SyncState) {
                         | SyncAction::CompareSyncState(_) => continue, // skip
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
                         SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
+                        SyncAction::ProcessNativeDelete(_) => panic!("Process native deleted shouldn't be here"),
                         SyncAction::Nothing => (),
                         SyncAction::UpdateNativeFile(_)
                         | SyncAction::UpdateSyncfile(_) =>
