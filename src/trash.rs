@@ -1,14 +1,14 @@
 use std::ptr;
+use std::ffi::OsStr;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStrExt;
-#[cfg(target_os = "windows")]
-use std::ffi::OsStr;
-#[cfg(target_os = "windows")]
-extern crate winapi;
 
 #[cfg(target_os = "macos")]
 use std::ffi::CString;
+
+#[cfg(target_os = "windows")]
+extern crate winapi;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -81,22 +81,23 @@ pub fn send_to_trash(f:&str) -> Result<(),String> {
     let mut fsref = FSRef { hidden: [0;80] };
 
     let make_ref_dont_follow_leaf_symlink = 1 as i32;
-        let opts = make_ref_dont_follow_leaf_symlink;
+    
+    let opts = make_ref_dont_follow_leaf_symlink;
 
-        let path = CString::new(f).unwrap();
-        let res = unsafe {
-            FSPathMakeRefWithOptions(path.as_ptr(),opts, &mut fsref, ptr::null_mut())
-        };
-        if res != 0 {
-            return Err(format!("Failed to locate file for trashing: {}; FSPathMakeRefWithOptions code: {}", f, res));
-        }
-        let res = unsafe {
-            FSMoveObjectToTrashSync(&mut fsref, ptr::null_mut(), 0)
-        };
-        if res != 0 {
-            return Err(format!("Failed to move file to trash: {}; FSMoveObjectToTrashSync code: {}", f, res));
-        }
-        Ok(())
+    let path = CString::new(f).unwrap();
+    let res = unsafe {
+        FSPathMakeRefWithOptions(path.as_ptr(),opts, &mut fsref, ptr::null_mut())
+    };
+    if res != 0 {
+        return Err(format!("Failed to locate file for trashing: {}; FSPathMakeRefWithOptions code: {}", f, res));
+    }
+    let res = unsafe {
+        FSMoveObjectToTrashSync(&mut fsref, ptr::null_mut(), 0)
+    };
+    if res != 0 {
+        return Err(format!("Failed to move file to trash: {}; FSMoveObjectToTrashSync code: {}", f, res));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
