@@ -732,7 +732,8 @@ pub fn do_sync(state:&mut SyncState) {
     state.sync_files_for_id = find_all_syncfiles(state);
 
     let global_ignore = vec![
-        glob::Pattern::new("**/.DS_Store").unwrap() // for a fun time click here: https://github.com/search?utf8=%E2%9C%93&q=.DS_Store&ref=simplesearch
+        glob::Pattern::new("**/.DS_Store").unwrap(), // for a fun time click here: https://github.com/search?utf8=%E2%9C%93&q=.DS_Store&ref=simplesearch
+        glob::Pattern::new("**/Thumbs.db").unwrap(), // windows turd
         ];
 
     let native_files = {
