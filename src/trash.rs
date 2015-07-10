@@ -1,4 +1,5 @@
 use std::ptr;
+use std::mem;
 
 #[cfg(target_os = "windows")]
 use std::ffi::OsStr;
@@ -19,7 +20,7 @@ struct SHFILEOPSTRUCTW {
     w_func: winapi::UINT,
     p_from: winapi::LPCWSTR,
     p_to: winapi::LPCWSTR,
-    f_flags: u32,
+    f_flags: u16,
     f_any_operations_aborted: winapi::BOOL,
     h_name_mappings: winapi::LPVOID,
     lpsz_progress_title: winapi::LPCWSTR
@@ -50,12 +51,16 @@ extern {
 #[cfg(target_os = "windows")]
 pub fn send_to_trash(f:&str) -> Result<(),String> {
     const FO_DELETE:winapi::UINT = 3;
-    const FOF_SILENT:u32 = 4;
-    const FOF_NOCONFIRMATION:u32 = 16;
-    const FOF_ALLOWUNDO:u32 = 64;
-    const FOF_NOERRORUI:u32 = 1024;
+    const FOF_SILENT:u16 = 4;
+    const FOF_NOCONFIRMATION:u16 = 16;
+    const FOF_ALLOWUNDO:u16 = 64;
+    const FOF_NOERRORUI:u16 = 1024;
 
-    let path:Vec<u16> = OsStr::new(f).encode_wide().chain(Some(0)).collect::<Vec<_>>();
+    // double-null termination is required for this API
+    let path:Vec<u16> = OsStr::new(f).encode_wide().chain(Some(0)).chain(Some(0)).collect::<Vec<_>>();
+
+    //println!("struct size: {}", mem::size_of::<SHFILEOPSTRUCTW>());
+    assert_eq!(mem::size_of::<SHFILEOPSTRUCTW>(), 56); // 56 = 64 bit size on 'doze
 
     let mut fileop = SHFILEOPSTRUCTW {
         hwnd: ptr::null_mut(),
@@ -72,7 +77,7 @@ pub fn send_to_trash(f:&str) -> Result<(),String> {
         SHFileOperationW(&mut fileop)
     };
     if res != 0 {
-        return Err(format!("Failed to send file to recycle bin: {}; SHFileOperationW code: {}", f, res));
+        return Err(format!("Failed to send file to recycle bin: {}; SHFileOperationW code: 0x{:x}", f, res));
     } else {
         return Ok(())
     }
@@ -170,6 +175,7 @@ mod tests {
             }
         }
 
+        assert!(testpath.is_file());
         match trash::send_to_trash(testpath.to_str().unwrap()) {
             Err(e) => panic!("{}", e),
             Ok(_) => ()
