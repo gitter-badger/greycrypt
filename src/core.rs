@@ -660,6 +660,28 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
 
     for sid in &sids {
         let files = files_for_id.get_mut(sid).unwrap();
+
+        // get rid of any sync files that are for ignored native files
+        let mut valid_files:Vec<String> = Vec::new();
+        for sfname in files.iter() {
+            let pb = PathBuf::from(&sfname);
+            let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
+                Err(e) => panic!("Can't read syncfile: {:?}", e),
+                Ok(sf) => sf
+            };
+            if !is_ignored(&sf.nativefile) {
+                valid_files.push(sfname.clone());
+            } else {
+                println!("Removing syncfile for ignored native file: {:?}", &sf.nativefile);
+                match remove_file(sfname) {
+                    Err(e) => panic!("Failed to remove syncfile: {:?}", e),
+                    Ok(_) => ()
+                }
+            }
+        }
+        files.clear();
+        files.append(&mut valid_files);
+
         if files.len() > 1 {
             // for each file, locate all other duplicates of that file in the list.
             // keep the file with the lowest (numeric) revguid, remove the others.
@@ -726,28 +748,34 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
     }
 }
 
-pub fn do_sync(state:&mut SyncState) {
-    dedup_syncfiles(state);
-
-    state.sync_files_for_id = find_all_syncfiles(state);
-
+fn is_ignored(f:&str) -> bool {
     let global_ignore = vec![
         glob::Pattern::new("**/.DS_Store").unwrap(), // for a fun time click here: https://github.com/search?utf8=%E2%9C%93&q=.DS_Store&ref=simplesearch
         glob::Pattern::new("**/Thumbs.db").unwrap(), // windows turd
         ];
+    for pat in &global_ignore {
+        if pat.matches(f) {
+            //println!("ignoring: {:?}", pb);
+            return true;
+        }
+    }
+    false
+}
+
+pub fn do_sync(state:&mut SyncState) {
+    dedup_syncfiles(state);
+
+    state.sync_files_for_id = find_all_syncfiles(state);
 
     let native_files = {
         // use hashset for path de-dup (TODO: but what about case differences?)
         let mut native_files = HashSet::new();
         {
             let mut visitor = |pb: &PathBuf| {
-                for pat in &global_ignore {
-                    if pat.matches_path(pb) {
-                        //println!("ignoring: {:?}", pb);
-                        return;
-                    }
+                let fname = pb.to_str().unwrap().to_string();
+                if !is_ignored(&fname) {
+                    native_files.insert(fname);
                 }
-                native_files.insert(pb.to_str().unwrap().to_string());
             };
 
             let native_paths = &state.conf.native_paths;
