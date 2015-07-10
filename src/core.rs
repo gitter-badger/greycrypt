@@ -27,6 +27,7 @@ enum SyncAction {
     UpdateSyncfile(SyncData),
     UpdateNativeFile(SyncData),
     ProcessNativeDelete(SyncData),
+    ProcessSyncfileDelete(SyncData),
     CreateNewNativeFile(SyncData),
     CheckSyncRevguid(SyncData),
     CheckFilesEqualElseConflict(SyncData)
@@ -63,31 +64,61 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Err(e) => panic!("Can't read syncfile: {:?}", e),
         Ok(sf) => sf
     };
+
     let sync_entry = match state.syncdb.get(&sf) {
         None => {
-            return SyncAction::CheckFilesEqualElseConflict(sd.clone());
+            if sf.is_deleted {
+                return SyncAction::ProcessSyncfileDelete(sd.clone());
+            } else {
+                return SyncAction::CheckFilesEqualElseConflict(sd.clone());
+            }
         }
         Some(entry) => entry
     };
 
-    let revguid_changed = sf.revguid != sync_entry.revguid;
-    let native_newer = native_mtime > sync_entry.native_mtime;
+    if sf.is_deleted {
+        // TODO: bah, maybe use match when I've worked this out
+        let revguid_changed = sf.revguid != sync_entry.revguid;
 
-    match (revguid_changed,native_newer) {
-        (true,true) => {
-            // conflict! for now, panic
-            panic!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
-                sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
-        },
-        (true,false) => {
-            SyncAction::UpdateNativeFile(sd.clone())
-        },
-        (false,true) => {
-            // Sync file needs update
-            SyncAction::UpdateSyncfile(sd.clone())
-        },
-        (false,false) => {
-            SyncAction::Nothing
+        if revguid_changed {
+            //  if revguid doesn't match, either
+            //   1) the checksum of our native data matches the checksum of the deleted data, in which case
+            //     we can delete thise file
+            //   2) the checksum doesn't match, in which case, the native file was updated and we
+            //     have a conflict because the incoming SF wants a delete.
+
+            return SyncAction::ProcessSyncfileDelete(sd.clone());
+        } else {
+            //  if the revguid matches, but native mtime is newer than the syncdb mtime
+            // then native has been recreated with new data: update sync file.
+
+            let native_newer = native_mtime > sync_entry.native_mtime; // TODO, always gonna be true if I set mtime to 0 on delete!
+            if native_newer {
+                return SyncAction::UpdateSyncfile(sd.clone());
+            } else {
+                return SyncAction::Nothing;
+            }
+        }
+    } else {
+        let revguid_changed = sf.revguid != sync_entry.revguid;
+        let native_newer = native_mtime > sync_entry.native_mtime;
+
+        match (revguid_changed,native_newer) {
+            (true,true) => {
+                // conflict! for now, panic
+                panic!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
+                    sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
+            },
+            (true,false) => {
+                SyncAction::UpdateNativeFile(sd.clone())
+            },
+            (false,true) => {
+                // Sync file needs update
+                SyncAction::UpdateSyncfile(sd.clone())
+            },
+            (false,false) => {
+                SyncAction::Nothing
+            }
         }
     }
 }
@@ -339,6 +370,31 @@ fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     SyncAction::Nothing
 }
 
+fn handle_delete(state:&mut SyncState, sf:&mut syncfile::SyncFile, syncpath: &PathBuf, mark_sf_as_deleted:bool) {
+    let nativefile_path = PathBuf::from(&sf.nativefile);
+    if nativefile_path.is_file() {
+        println!("Sending deleted local file to Trash: {}", &sf.nativefile);
+        match trash::send_to_trash(&sf.nativefile) {
+            Err(e) => panic!("Failed to trash file: {:?}", e),
+            Ok(_) => ()
+        }
+    }
+    if mark_sf_as_deleted {
+        match sf.mark_deleted_and_save(&state.conf,Some(syncpath.clone())) {
+            Err(e) => panic!("Failed to write syncfile: {:?}", e),
+            Ok(_) => ()
+        };
+    }
+
+    // update syncdb
+    let native_mtime = 0;
+
+    match state.syncdb.update(&sf,native_mtime) {
+        Err(e) => panic!("Failed to update sync db: {:?}; {:?}", &sf.nativefile, e),
+        Ok(_) => ()
+    }
+}
+
 fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     // So, what we should do here is update the syncfile and set "Deleted", possibly with a
     // deletion time, in its metadata.
@@ -353,29 +409,53 @@ fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Err(e) => panic!("Can't read syncfile: {:?}", e),
         Ok(sf) => sf
     };
-    // normally the native path will be gone already, but just in case...
-    let nativefile_path = PathBuf::from(&sf.nativefile);
-    if nativefile_path.is_file() {
-        println!("Sending deleted local file to Trash: {}", &sf.nativefile);
-        match trash::send_to_trash(&sf.nativefile) {
-            Err(e) => panic!("Failed to trash file: {:?}", e),
-            Ok(_) => ()
-        }
-    }
-    match sf.mark_deleted_and_save(&state.conf,Some(sd.syncfile.clone())) {
-        Err(e) => panic!("Failed to write syncfile: {:?}", e),
-        Ok(_) => ()
-    };
-
-    // update syncdb
-    let native_mtime = 0;
-
-    match state.syncdb.update(&sf,native_mtime) {
-        Err(e) => panic!("Failed to update sync db: {:?}; {:?}", &sf.nativefile, e),
-        Ok(_) => ()
-    }
+    handle_delete(state, &mut sf, &sd.syncfile, true);
 
     SyncAction::Nothing
+}
+
+fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
+    let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
+        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Ok(sf) => sf
+    };
+    // sanity
+    if !sf.is_deleted {
+        panic!("Attempting to delete native file using a non-deleted syncfile!")
+    }
+
+    // so, here's a dilemma, if the sync file is marked as deleted and we have no syncdb entry for this
+    // guy, should we delete the native file?
+    // ideally we'd have a checksum on the data of the native file, so we could compare that
+    // with the checksum at time of deletion, and only delete if it matches.
+    // for now I'm just gonna panic if I detect this case.
+    let revguid = {
+        let sync_entry = match state.syncdb.get(&sf) {
+            None => {
+                // here we would need to check to see if the native file has the same checksum
+                // as deleted - actually, maybe we want to check that no matter what
+                panic!("Refusing to delete native file; no syncdb entry exists: {:?}",sf.nativefile);
+            }
+            Some(entry) => entry
+        };
+        sync_entry.revguid
+    };
+
+    // if the revguids are different we can delete the native file
+    // TODO: also check checksum when we have that; if that fails then this is a conflict
+    if sf.revguid != revguid {
+        // don't mark it as deleted because its already marked as such (and doing so
+        // would generate another revguid, causing churn on remote systems)
+        handle_delete(state, &mut sf, &sd.syncfile, false);
+        SyncAction::Nothing
+    } else {
+        // we should have already handled this...but log if the native file exists (bug)
+        let pb = PathBuf::from(&sf.nativefile);
+        if pb.is_file() {
+            println!("Error: left behind a file that should have been deleted: {:?}", sf.nativefile);
+        }
+        SyncAction::Nothing
+    }
 }
 
 fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
@@ -384,6 +464,7 @@ fn pass1_prep(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::CheckSyncRevguid(ref sd) => check_sync_revguid(state,sd),
         SyncAction::Nothing
         | SyncAction::ProcessNativeDelete(_)
+        | SyncAction::ProcessSyncfileDelete(_)
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
         | SyncAction::CheckFilesEqualElseConflict(_)
@@ -398,6 +479,7 @@ fn pass2_verify(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
     match *sa {
         SyncAction::Nothing
         | SyncAction::ProcessNativeDelete(_)
+        | SyncAction::ProcessSyncfileDelete(_)
         | SyncAction::UpdateSyncfile(_)
         | SyncAction::UpdateNativeFile(_)
         | SyncAction::CheckFilesEqualElseConflict(_)
@@ -414,6 +496,7 @@ fn pass3_commit(state:&mut SyncState,sa:&SyncAction) -> SyncAction {
         SyncAction::UpdateSyncfile(ref sd) => update_sync_file(state,sd),
         SyncAction::CreateNewNativeFile(ref sd) => create_new_native_file(state,sd),
         SyncAction::ProcessNativeDelete(ref sd) => process_native_delete(state,sd),
+        SyncAction::ProcessSyncfileDelete(ref sd) => process_syncfile_delete(state,sd),
         SyncAction::CompareSyncState(_)
         | SyncAction::CheckSyncRevguid(_) => panic!("Cannot process action in this pass: {:?}", sa),
     }
@@ -759,7 +842,8 @@ pub fn do_sync(state:&mut SyncState) {
                         | SyncAction::CompareSyncState(_) => continue, // skip
                         SyncAction::CheckSyncRevguid(_) => panic!("Check sync revguid shouldn't be here"),
                         SyncAction::CreateNewNativeFile(_) => panic!("Create new native file shouldn't be here"),
-                        SyncAction::ProcessNativeDelete(_) => panic!("Process native deleted shouldn't be here"),
+                        SyncAction::ProcessNativeDelete(_) => panic!("Process native delete shouldn't be here"),
+                        SyncAction::ProcessSyncfileDelete(_) => panic!("Process sync delete shouldn't be here"),
                         SyncAction::Nothing => (),
                         SyncAction::UpdateNativeFile(_)
                         | SyncAction::UpdateSyncfile(_) =>
