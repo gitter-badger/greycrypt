@@ -223,11 +223,13 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     let sync_entry = state.syncdb.get(&sf);
 
-    // if the sf is deleted, we are done (no native file to delete)
     if sf.is_deleted {
         if !sync_entry.is_none() && sync_entry.unwrap().revguid != sf.revguid {
-            println!("Ignoring deleted syncfile with no corresponding native file: {:?}", &sd.syncid);
+            // the native file is already gone, but let the action handle this case (to update syncdb, etc)
+            return SyncAction::ProcessNativeDelete(sd.clone());
+            //println!("Ignoring deleted syncfile with no corresponding native file: {:?}", &sd.syncid);
         }
+        // nothing to do
         return SyncAction::Nothing;
     }
 
