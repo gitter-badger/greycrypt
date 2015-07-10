@@ -73,6 +73,19 @@ impl SyncFile {
         Ok((idstr,syncpath))
     }
 
+    pub fn set_deleted(&mut self) {
+        *self = SyncFile {
+            id: self.id.clone(),
+            keyword: self.keyword.clone(),
+            relpath: self.relpath.clone(),
+            revguid: uuid::Uuid::new_v4(),
+            nativefile: self.nativefile.to_string(),
+            is_binary: self.is_binary,
+            is_deleted: true,
+            sync_file_state: SyncFileState::Closed
+        };
+    }
+
     pub fn from_native(conf:&config::SyncConfig, nativefile: &str) -> Result<SyncFile,String> {
         let (kw,relpath) = {
             let res = conf.mapping.get_kw_relpath(nativefile);
@@ -591,7 +604,7 @@ impl SyncFile {
     }
 
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
-        self.is_deleted = true;
+        self.set_deleted();
         let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
             Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
@@ -946,6 +959,7 @@ mod tests {
 
             readit(syncpath)
         };
+        let start_revguid = sf.revguid;
 
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
@@ -956,9 +970,14 @@ mod tests {
             Err(e) => panic!("Failed to write syncfile: {:?}", e),
             Ok(_) => ()
         };
+        assert!(start_revguid != sf.revguid);
+        let new_revguid = sf.revguid;
 
         let mut sf = readit(syncpath);
+
         assert!(sf.is_deleted);
+        assert!(start_revguid != sf.revguid);
+        assert_eq!(new_revguid, sf.revguid);
 
         // should have no data
         let mut data:Vec<u8> = Vec::new();
