@@ -1,4 +1,6 @@
 use std::ptr;
+
+#[cfg(target_os = "windows")]
 use std::mem;
 
 #[cfg(target_os = "windows")]
