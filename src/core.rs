@@ -534,7 +534,7 @@ pub fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
             }
         };
 
-        let d = &state.conf.sync_dir;
+        let d = &state.conf.sync_dir();
         let dp = Path::new(d);
         let res = util::visit_dirs(&dp, &mut visitor);
         match res {

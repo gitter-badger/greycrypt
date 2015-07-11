@@ -10,16 +10,62 @@ use mapping;
 pub const KEY_SIZE: usize = 32;
 
 pub struct SyncConfig {
-    pub sync_dir: String,
+    sync_dir: String,
     pub mapping: mapping::Mapping,
     pub encryption_key: Option<[u8; KEY_SIZE]>,
     pub syncdb_dir: Option<String>,
     pub native_paths: Vec<String>
 }
 
+#[cfg(feature = "release_paths")]
+pub const BUILD_PREFIX:&'static str = "rel";
+#[cfg(feature = "release_paths")]
+pub const IS_REL:bool = true;
+
+#[cfg(not(feature = "release_paths"))]
+pub const BUILD_PREFIX:&'static str = "dbg";
+#[cfg(not(feature = "release_paths"))]
+pub const IS_REL:bool = false;
+
+impl SyncConfig {
+    pub fn sync_dir(&self) -> &str {
+        &self.sync_dir
+    }
+
+    pub fn new(sync_dir: String,
+        mapping: mapping::Mapping,
+        ek:Option<[u8;KEY_SIZE]>,
+        syncdb_dir:Option<String>,
+        native_paths: Vec<String>) -> SyncConfig {
+            let mut pb = PathBuf::from(&sync_dir);
+
+            // let tests omit build prefix
+            if !cfg!(test) {
+                //error
+                pb.push(BUILD_PREFIX);
+            }
+
+            let conf = SyncConfig {
+                sync_dir: pb.to_str().unwrap().to_string(),
+                mapping: mapping,
+                encryption_key: ek,
+                syncdb_dir: syncdb_dir,
+                native_paths: native_paths
+            };
+            conf
+    }
+}
+
 // TODO: this function should just return a Result instead of panicking
 pub fn parse() -> SyncConfig {
-    let toml = util::load_toml_file(&"mapping.toml".to_string());
+    let mut file = "mapping".to_string();
+    if !IS_REL {
+        file.push_str(".");
+        file.push_str(BUILD_PREFIX);
+    };
+    file.push_str(".toml");
+
+    let toml = util::load_toml_file(&file);
 
     // verify config
 
@@ -121,13 +167,13 @@ pub fn parse() -> SyncConfig {
         next = next + 1;
     }
 
-    let c = SyncConfig {
-        sync_dir: sync_dir,
-        mapping: mapping,
-        encryption_key: Some(ec),
-        syncdb_dir: None,
-        native_paths: native_paths
-    };
+    let c = SyncConfig::new(
+        sync_dir,
+        mapping,
+        Some(ec),
+        None,
+        native_paths
+    );
 
     c
 }

@@ -34,6 +34,7 @@ impl SyncDb {
                             // append app name
                             let mut pb = PathBuf::from(&dir);
                             pb.push("GreyCrypt");
+                            pb.push(config::BUILD_PREFIX);
                             pb
                         }
                     }
@@ -185,13 +186,12 @@ mod tests {
 
         let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
-        let conf = config::SyncConfig {
-            sync_dir: outpath.to_str().unwrap().to_string(),
-            mapping: mapping,
-            encryption_key: Some(ec),
-            syncdb_dir: Some(syncdb_dir.to_str().unwrap().to_string()),
-            native_paths: Vec::new()
-        };
+        let conf = config::SyncConfig::new(
+            outpath.to_str().unwrap().to_string(),
+            mapping,
+            Some(ec),
+            Some(syncdb_dir.to_str().unwrap().to_string()),
+            Vec::new());
         conf
     }
 

@@ -64,7 +64,7 @@ impl SyncFile {
         };
         let idstr = SyncFile::get_sync_id(kw,&relpath);
 
-        let mut syncpath = PathBuf::from(&conf.sync_dir);
+        let mut syncpath = PathBuf::from(&conf.sync_dir());
         let prefix = &idstr.to_string()[0..2];
         syncpath.push(prefix);
         syncpath.push(&idstr);
@@ -750,13 +750,12 @@ mod tests {
 
         let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
-        let conf = config::SyncConfig {
-            sync_dir: outpath.to_str().unwrap().to_string(),
-            mapping: mapping,
-            encryption_key: Some(ec),
-            syncdb_dir: None,
-            native_paths: Vec::new()
-        };
+        let conf = config::SyncConfig::new(
+            outpath.to_str().unwrap().to_string(),
+            mapping,
+            Some(ec),
+            None,
+            Vec::new());
         conf
     }
 
