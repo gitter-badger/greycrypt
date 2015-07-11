@@ -253,42 +253,9 @@ fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&Path
     let mut sf_data:Vec<u8> = Vec::new();
     let syncpath = syncfile.to_str().unwrap().to_string();
     let sf = load_syncfile_or_panic(state,&syncpath,&mut sf_data);
-
-    let native_bytes = {
-        let fname = nativefile;
-        if sf.is_binary {
-            // TODO: would be nice to do this compare without slurping (big files = big memory)
-            util::slurp_bin_file(&fname.to_str().unwrap())
-        } else {
-            // TODO: this code is nastily duped from elsewhere because canon_lines has such a bad interface
-
-            // For text files, we want to compare ignoring line endings.  The syncfile will have them
-            // in canonical form, so we need to read the native file and canonicalize it as well, then
-            // compare.
-            let fin = match File::open(fname) {
-                Err(e) => return Err(format!("Failed to open native file: {:?}: {:?}", fname, e)),
-                Ok(f) => f
-            };
-
-            let br = BufReader::new(fin);
-            let in_lines = br.lines();
-            let mut out_lines:Vec<String> = Vec::new();
-            for l in in_lines {
-                match l {
-                    Err(e) => return Err(format!("Failed to read line from alleged text source: {:?}: {}", fname, e)),
-                    Ok(l) => {
-                        out_lines.push(l.to_string());
-                    }
-                }
-            }
-
-            let line_buf = match util::canon_lines(&out_lines) {
-                Err(e) => return Err(format!("Failed to read lines: {:?}: {}", fname, e)),
-                Ok(buf) => buf
-            };
-            line_buf
-        }
-    };
+    // if file is text, syncfile decryption will have decanoned the lines, so we can compare them
+    // directly with native line format.  so use binary read for both text and binary files.
+    let native_bytes = util::slurp_bin_file(&nativefile.to_str().unwrap());
 
     let native_bytes = &native_bytes[0 .. native_bytes.len()];
     let sf_bytes = &sf_data[0 .. sf_data.len()];
