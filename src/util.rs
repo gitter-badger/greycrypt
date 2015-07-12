@@ -83,10 +83,19 @@ pub fn slurp_text_file(fname:&str) -> String {
 
 pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
     let toml = slurp_text_file(filename);
-    let res = toml::Parser::new(&toml).parse();
-    let toml = match res {
+    let mut parser = toml::Parser::new(&toml);
+    let toml = match parser.parse() {
         Some(value) => value,
-        None => { panic!("Failed to parse toml file: {}", filename) }
+        None => {
+            println!("Failed to load toml file");
+            for err in &parser.errors {
+                let (loline, locol) = parser.to_linecol(err.lo);
+                let (hiline, hicol) = parser.to_linecol(err.hi);
+                println!("{}:{}:{}-{}:{} error: {}",
+                         filename, loline, locol, hiline, hicol, err.desc);
+            }
+            panic!("");
+        }         
     };
 
     toml

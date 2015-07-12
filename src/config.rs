@@ -1,4 +1,5 @@
-//use std::collections::BTreeMap;
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::path::{PathBuf};
 use std::fs::{PathExt};
 
@@ -101,59 +102,97 @@ pub fn parse() -> SyncConfig {
 
     // host name mapping must exist
     let hn = util::get_hostname();
-    // "." in the hostname, as is common on macs, will confuse toml.  look for the hostname
-    // "." removed or replaced with "_"
-    let hn = hn.replace(".", "_");
-    let hn_key = format!("Machine_{}", hn);
+    
     let (sync_dir, mapping) = {
-        let mval = toml.get(&hn_key);
-        //println!("{:?}: '{:?}' -> {:?}",toml,&hn_key,mval);
-        let hn_config = match mval {
-            None => {
-                let mut helpmsg = String::new();
-                if hn.find('.') != None {
-                    helpmsg = format!("Try replacing '.' in your hostname with '_' in the configuration file: {}", hn_key.replace(".", "_"));
+        let mval = match toml.get("Mapping") {
+            None => panic!("Unable to find [Mapping] in toml file"),
+            Some (mval) => mval
+        };
+        let mval = match mval.as_table() {
+            None => panic!("Mapping object must be table, like this: [Mapping]"),
+            Some (mval) => mval
+        };
+        
+        let mut map_nicknames:HashSet<String> = HashSet::new();
+        for (map_nick,hn_list) in mval {
+            match hn_list.as_slice() {
+                None => panic!("The value for map nick {} must be a list, e.g [\"myhostname\"]", map_nick),
+                Some(hn_list) => {
+                    for lhn in hn_list {
+                        match lhn.as_str() {
+                            None => panic!("The values in map nick list {} must be strings, e.g. e.g [\"myhostname\"]", map_nick),
+                            Some (lhn) => {
+                                if lhn == hn {
+                                    map_nicknames.insert(map_nick.to_string());
+                                }                            
+                            }
+                        }
+                    }
                 }
-                panic!("No hostname config found, cannot continue: {}\n{}", hn_key, helpmsg)
-            },
-            Some(c) => c
+            } 
+        }
+        
+        // host must be mapped to 1 nick
+        if map_nicknames.len() == 0 {
+            panic!("Unable to map hostname: try adding a line to [Mapping] like this: mynick = [\"{}\"]", hn); 
+        }
+        if map_nicknames.len() > 1 {
+            panic!("Too many mappings for hostname found, make sure [Mapping] contains only one relationship for host {}", hn);
+        }
+
+        let map_nick = map_nicknames.iter().nth(0).unwrap();        
+        
+        // now try to find a HostDef.<hostname> object
+        let hn_map_key = format!("HostDef-{}", map_nick);
+        let hn_config = match toml.get(&hn_map_key) {
+            None => panic!("No host definition found, try adding [{}]", hn_map_key),
+            Some(hn_config) => {
+                match hn_config.as_table() {
+                    None => panic!("Hostname config must be a table, e.g. [{}]", hn_map_key),
+                    Some(c) => c
+                }
+            } 
         };
-        let hn_config = match hn_config.as_table() {
-            None => { panic!("Hostname config must be a table") },
-            Some(c) => c
+        
+        // find key in hn_config and return its value; panics if not found.
+        let mut hn_config = hn_config.clone();
+        let get_and_remove = |hn_config:&mut BTreeMap<String, toml::Value>,key:&str| {
+            let sd = match hn_config.get(key) {
+                None => { panic!("No {} specified for host in {}", key, &hn_map_key) },
+                Some (sd) => {
+                    sd.clone()
+                }
+            };
+            hn_config.remove(key);
+            sd
         };
-        let sync_dir = match hn_config.get(&"SyncDir".to_string()) {
-            None => { panic!("No SyncDir specified for host") },
+        
+        let sync_dir = match get_and_remove(&mut hn_config,"SyncDir").as_str() {
+            None => panic!("Value for SyncDir must be a string"),
             Some (sd) => {
-                let sd = sd.as_str().unwrap().to_string();
                 let pp = PathBuf::from(&sd);
                 if !pp.is_dir() {
                     panic!("Sync directory does not exist: {}", sd);
                 }
-                sd
+                sd.to_string()                
             }
         };
+        
+        // all the other key/value pairs are kw->dir mappings
+        let map_count = hn_config.len();
+        if map_count == 0 {
+            let mut helpstr = String::new();
+            helpstr.push_str("No mapping entries found for host\n");
+            helpstr.push_str(&format!("Add lines to [{}] with this format: keyword = \"/path/to/local/dir\"\n", hn_map_key));
+            helpstr.push_str("Note: on windows, double backslash is required: home = \"C:\\\\Users\\\\Fred\"");
+            panic!(helpstr);
+        }
 
-        let mapping = match hn_config.get(&"Mapping".to_string()) {
-            None => { panic!("No mapping for for host") },
-            Some(m) => {
-                match m.as_table() {
-                    None => { panic!("Hostname mapping must be a table") },
-                    Some(m) => {
-                        let map_count = m.len();
-                        if map_count == 0 {
-                            panic!("No mapping entries found for host");
-                        }
-                        let mapping = mapping::Mapping::new(m);
-                        match mapping {
-                            Ok(m) => m,
-                            Err(msg) => panic!(msg)
-                        }
-                    }
-                }
-            }
+        let mapping = match mapping::Mapping::new(&hn_config) {
+            Ok(m) => m,
+            Err(msg) => panic!(msg)
         };
-
+        
         //println!("{:?}",mapping);
 
         (sync_dir, mapping)

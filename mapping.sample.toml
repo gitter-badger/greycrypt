@@ -13,20 +13,16 @@ NativePaths = [
   "/Users/john/Documents/GreyCryptTestSrc"
   ]
 
-[Machine_Descendent]
-SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
+[Mapping]
+mac = ["johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
+winreg = ["Descendent", "John-WinLaptop"]
 
-[Machine_Descendent.Mapping]
-home = "C:\\Users\\John"
-
-[Machine_John-WinLaptop]
-SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
-
-[Machine_John-WinLaptop.Mapping]
-home = "C:\\Users\\John"
-
-[Machine_johns-mbp_home]
+[HostDef-mac]
 SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
-
-[Machine_johns-mbp_home.Mapping]
 home = "/Users/john"
+
+[HostDef-winreg]
+SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
+home = "C:\\Users\\John"
+
+
