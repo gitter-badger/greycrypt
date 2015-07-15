@@ -57,15 +57,22 @@ impl SyncConfig {
     }
 }
 
-// TODO: this function should just return a Result instead of panicking
-pub fn parse() -> SyncConfig {
+pub fn def_config_file() -> String {
     let mut file = "mapping".to_string();
     if !IS_REL {
         file.push_str(".");
         file.push_str(BUILD_PREFIX);
     };
     file.push_str(".toml");
+    file
+}
 
+// TODO: this function should just return a Result instead of panicking
+pub fn parse(cfgfile:Option<String>) -> SyncConfig {
+    let file = match cfgfile {
+        None => def_config_file(),
+        Some(f) => f
+    };
     let toml = util::load_toml_file(&file);
 
     // verify config

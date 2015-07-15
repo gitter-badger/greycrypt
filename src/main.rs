@@ -45,7 +45,7 @@ fn main() {
     }
 
     // init conf and state
-    let conf = config::parse();
+    let conf = config::parse(None);
     let syncdb = match syncdb::SyncDb::new(&conf) {
         Err(e) => panic!("Failed to create syncdb: {:?}", e),
         Ok(sdb) => sdb

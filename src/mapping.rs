@@ -92,10 +92,21 @@ impl Mapping {
 #[cfg(test)]
 mod tests {
     use config;
-
+    use std::env;
+    use std::path::{PathBuf};
+        
+    fn config_file() -> String {
+        let wd = env::current_dir().unwrap();
+        let mut syncpath = PathBuf::from(&wd);
+        syncpath.push("testdata");
+        syncpath.push("test_config.toml");
+        syncpath.to_str().unwrap().to_string()
+    }
+    
     #[test]
     fn parse_mapping() {
-        let config = config::parse(); // TODO: this test should use its own configuration file!
+        
+        let config = config::parse(Some(config_file()));
         assert_eq!(config.mapping.dir_to_keyword.len(), 1);
         assert_eq!(config.mapping.keyword_to_dir.len(), 1);
 
@@ -106,7 +117,8 @@ mod tests {
 
     #[test]
     fn get_kw_relpath() {
-        let config = config::parse(); // TODO: this test should use its own configuration file!
+        let config = config::parse(Some(config_file()));
+        
         let res = config.mapping.get_kw_relpath("C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt");
         match res {
             None => panic!("Expected a keyword and relpath"),
