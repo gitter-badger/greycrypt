@@ -79,55 +79,41 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     // read "General" section
 
-    let general_section = {
-        match toml.get("General") {
-            None => panic!("No 'General' section in config file"),
-            Some (thing) => {
-                match thing.as_table() {
-                    None => panic!("'General' must be a table, e.g.: [General]"),
-                    Some (table) => {
-                        table
-                    }
-                }
-            }
-        }
-    };
-
-    // get native paths
-    let mut native_paths:Vec<String> = Vec::new();
-    match general_section.get("NativePaths") {
-        None => { panic!("No 'NativePaths' key found in config, cannot continue") },
-        Some(paths) => {
-            for p in paths.as_slice().unwrap() {
-                native_paths.push(p.as_str().unwrap().to_string());
-            }
-        }
-    }
-    if native_paths.len() == 0 {
-        panic!("No NativePaths are configured, cannot continue");
-    }
+//    let general_section = {
+//        match toml.get("General") {
+//            None => panic!("No 'General' section in config file"),
+//            Some (thing) => {
+//                match thing.as_table() {
+//                    None => panic!("'General' must be a table, like: [General]"),
+//                    Some (table) => {
+//                        table
+//                    }
+//                }
+//            }
+//        }
+//    };
 
     // host name mapping must exist
     let hn = util::get_hostname();
     
-    let (sync_dir, mapping) = {
+    let (sync_dir, native_paths, mapping) = {
         let mval = match toml.get("Mapping") {
             None => panic!("Unable to find [Mapping] in toml file"),
             Some (mval) => mval
         };
         let mval = match mval.as_table() {
-            None => panic!("Mapping object must be table, like this: [Mapping]"),
+            None => panic!("Mapping object must be table, like: [Mapping]"),
             Some (mval) => mval
         };
         
         let mut map_nicknames:HashSet<String> = HashSet::new();
         for (map_nick,hn_list) in mval {
             match hn_list.as_slice() {
-                None => panic!("The value for map nick {} must be a list, e.g [\"myhostname\"]", map_nick),
+                None => panic!("The value for map nick {} must be a list, like: [\"myhostname\"]", map_nick),
                 Some(hn_list) => {
                     for lhn in hn_list {
                         match lhn.as_str() {
-                            None => panic!("The values in map nick list {} must be strings, e.g. e.g [\"myhostname\"]", map_nick),
+                            None => panic!("The values in map nick list {} must be strings, like: [\"myhostname\"]", map_nick),
                             Some (lhn) => {
                                 if lhn == hn {
                                     map_nicknames.insert(map_nick.to_string());
@@ -141,7 +127,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
         
         // host must be mapped to 1 nick
         if map_nicknames.len() == 0 {
-            panic!("Unable to map hostname: try adding a line to [Mapping] like this: mynick = [\"{}\"]", hn); 
+            panic!("Unable to map hostname: try adding a line to [Mapping] like: mynick = [\"{}\"]", hn); 
         }
         if map_nicknames.len() > 1 {
             panic!("Too many mappings for hostname found, make sure [Mapping] contains only one relationship for host {}", hn);
@@ -155,7 +141,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             None => panic!("No host definition found, try adding [{}]", hn_map_key),
             Some(hn_config) => {
                 match hn_config.as_table() {
-                    None => panic!("Hostname config must be a table, e.g. [{}]", hn_map_key),
+                    None => panic!("Hostname config must be a table, like: [{}]", hn_map_key),
                     Some(c) => c
                 }
             } 
@@ -179,11 +165,31 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             Some (sd) => {
                 let pp = PathBuf::from(&sd);
                 if !pp.is_dir() {
-                    panic!("Sync directory does not exist: {}", sd);
+                    println!("Warning: sync directory does not exist: {}", sd);
                 }
                 sd.to_string()                
             }
         };
+        
+        let mut native_paths:Vec<String> = Vec::new();
+        match get_and_remove(&mut hn_config,"NativePaths").as_slice() {
+            None => panic!("'NativePaths' must be a list of strings in host def: {}", hn_map_key),
+            Some (ref paths) => {
+                for p in paths.iter() {
+                    match p.as_str() {
+                        None => panic!("'NativePaths' must contain strings, found a non-string: {:?}", p),
+                        Some(s) => {
+                            native_paths.push(p.to_string());
+                        } 
+                    }
+                }
+            }
+        }
+        
+        if native_paths.len() == 0 {
+            panic!("No NativePaths are configured, cannot continue");
+        }
+        
         
         // all the other key/value pairs are kw->dir mappings
         let map_count = hn_config.len();
@@ -202,7 +208,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
         
         //println!("{:?}",mapping);
 
-        (sync_dir, mapping)
+        (sync_dir, native_paths, mapping)
     };
 
     // TODO: at some point I'm going to have to get this from somewhere!

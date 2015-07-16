@@ -1,28 +1,20 @@
-[General]
-# the absolute path prefix on these paths doesn't matter; as long
-# as there is a mapping for each path on this machine, it will work.
-# TODO: actually it doesn't quite work like this, paths have to be specified
-# explicitly
-NativePaths = [
-  #"C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
-  #"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
-  #"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
-  #"C:\\Users\\John\\Documents\\GreyCryptTestSrc",
-  #"C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir",
-  "/Users/john/Documents/AnotherGreyGryptTestDir",
-  "/Users/john/Documents/GreyCryptTestSrc"
-  ]
-
 [Mapping]
 mac = ["johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
-winreg = ["Descendent", "John-WinLaptop"]
+winreg = ["UnitTestHost", "Descendent", "John-WinLaptop"]
 
 [HostDef-mac]
 SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
+NativePaths = [
+  "/Users/john/Documents/AnotherGreyGryptTestDir",
+  "/Users/john/Documents/GreyCryptTestSrc"
+  ]
 home = "/Users/john"
 
 [HostDef-winreg]
 SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
+NativePaths = [
+  "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
+  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir",
+]
 home = "C:\\Users\\John"
-
 

@@ -64,7 +64,10 @@ impl Mapping {
             match walk {
                 None => break,
                 Some(p) => {
-                    let ps = p.to_str().unwrap();
+                    let ps = match p.to_str() {
+                        None => panic!("Failed to unpack path, possibly not valid: {:?}", p),
+                        Some(p) => p
+                    };
 
                     let kw = self.lookup_kw(ps);
                     match kw {
@@ -96,6 +99,8 @@ mod tests {
     use std::path::{PathBuf};
         
     fn config_file() -> String {
+        env::set_var("GREYCRYPT_HOST", "UnitTestHost");
+        
         let wd = env::current_dir().unwrap();
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");

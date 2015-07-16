@@ -102,11 +102,20 @@ pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
 }
 
 pub fn get_hostname() -> String {
-    // no direct std function for this, as far as I can tell
-    let output = Command::new("hostname")
-                         .output()
-                         .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
-    String::from_utf8(output.stdout).unwrap().trim().to_string()
+    // allow env to override (mainly for tests)
+    let hostname = match env::var("GREYCRYPT_HOST") {
+        Err(_) => {
+            // no direct std function for this, as far as I can tell
+            let output = Command::new("hostname")
+                                 .output()
+                                 .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
+            String::from_utf8(output.stdout).unwrap().trim().to_string()        
+        },
+        Ok(v) => {
+            v
+        }
+    };
+    hostname
 }
 
 pub fn canon_path(p:&str) -> String {
