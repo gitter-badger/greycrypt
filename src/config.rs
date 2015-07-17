@@ -12,6 +12,7 @@ pub const KEY_SIZE: usize = 32;
 
 pub struct SyncConfig {
     sync_dir: String,
+    pub host_name: String,
     pub mapping: mapping::Mapping,
     pub encryption_key: Option<[u8; KEY_SIZE]>,
     pub syncdb_dir: Option<String>,
@@ -34,6 +35,7 @@ impl SyncConfig {
     }
 
     pub fn new(sync_dir: String,
+        host_name: String,
         mapping: mapping::Mapping,
         ek:Option<[u8;KEY_SIZE]>,
         syncdb_dir:Option<String>,
@@ -48,6 +50,7 @@ impl SyncConfig {
 
             let conf = SyncConfig {
                 sync_dir: pb.to_str().unwrap().to_string(),
+                host_name: host_name,                
                 mapping: mapping,
                 encryption_key: ek,
                 syncdb_dir: syncdb_dir,
@@ -55,6 +58,8 @@ impl SyncConfig {
             };
             conf
     }
+    
+
 }
 
 pub fn def_config_file() -> String {
@@ -78,23 +83,34 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     // verify config
 
     // read "General" section
+    let host_name_override = {
+        match toml.get("General") {
+            None => None,
+            Some (thing) => {
+                match thing.as_table() {
+                    None => panic!("'General' must be a table, like: [General]"),
+                    Some (table) => {
+                        match table.get("HostnameOverride") {
+                            None => None,
+                            Some(name) => {
+                                match name.as_str() {
+                                    None => panic!("HostnameOverride must be a string"),
+                                    Some(name) => Some(name.trim().to_string())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
 
-//    let general_section = {
-//        match toml.get("General") {
-//            None => panic!("No 'General' section in config file"),
-//            Some (thing) => {
-//                match thing.as_table() {
-//                    None => panic!("'General' must be a table, like: [General]"),
-//                    Some (table) => {
-//                        table
-//                    }
-//                }
-//            }
-//        }
-//    };
+    let host_name = match host_name_override {
+        None => util::get_hostname(),
+        Some(name) => name 
+    };
 
-    // host name mapping must exist
-    let hn = util::get_hostname();
+    let hn = host_name.clone(); 
     
     let (sync_dir, native_paths, mapping) = {
         let mval = match toml.get("Mapping") {
@@ -221,6 +237,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     let c = SyncConfig::new(
         sync_dir,
+        host_name,
         mapping,
         Some(ec),
         None,

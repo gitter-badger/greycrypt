@@ -99,8 +99,6 @@ mod tests {
     use std::path::{PathBuf};
         
     fn config_file() -> String {
-        env::set_var("GREYCRYPT_HOST", "UnitTestHost");
-        
         let wd = env::current_dir().unwrap();
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
@@ -120,20 +118,35 @@ mod tests {
         assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
     }
 
-    #[test]
-    fn get_kw_relpath() {
-        let config = config::parse(Some(config_file()));
-        
-        let res = config.mapping.get_kw_relpath("C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt");
+    fn test_kw_relpath(config:&config::SyncConfig, srcpath:&str, ex_kw:&str,ex_relpath:&str) {
+        let res = config.mapping.get_kw_relpath(srcpath);
         match res {
             None => panic!("Expected a keyword and relpath"),
             Some((kw,relpath)) => {
-                assert_eq!(kw, "HOME");
-                assert_eq!(relpath, "/Documents/GreyCryptTestSrc/Another file.txt");
+                assert_eq!(kw, ex_kw);
+                assert_eq!(relpath, ex_relpath);
             }
         }
+    }
 
-        let res = config.mapping.get_kw_relpath("C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt");
+    // unfortunately I need unix and windows variants of these tests, because PathBuf, which I use 
+    // extensively, cannot parse paths that aren't native to the platform.
+    
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn get_kw_relpath() {
+        let config = config::parse(Some(config_file()));
+        test_kw_relpath(&config, "/Users/john/Documents/GreyCryptTestSrc/Another file.txt", "HOME", "/Documents/GreyCryptTestSrc/Another file.txt");
+
+        let res = config.mapping.get_kw_relpath("/Users/Fred/Documents/GreyCryptTestSrc/Another file.txt");
         assert_eq!(res,None);
     }
+    
+    //"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt"
+    //"HOME"
+    // "/Documents/GreyCryptTestSrc/Another file.txt"
+    
+    //"C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt"
+    
+    
 }

@@ -374,7 +374,7 @@ impl SyncFile {
         }
     }
 
-    fn pack_metadata(&self, v:&mut Vec<u8>) {
+    fn pack_metadata(&self, conf:&config::SyncConfig, v:&mut Vec<u8>) {
         let md_format_ver = 1;
         // TODO: let _ is janky
         // TODO: no panic (return on err)
@@ -397,7 +397,7 @@ impl SyncFile {
             }
         };
         let _ = writeln!(v, "origin_native_mtime: {}", mtime);
-        let _ = writeln!(v, "origin_host: {}", util::get_hostname());
+        let _ = writeln!(v, "origin_host: {}", conf.host_name);
     }
 
     fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
@@ -583,7 +583,7 @@ impl SyncFile {
 
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
-        self.pack_metadata(&mut v);
+        self.pack_metadata(conf, &mut v);
 
         // pass true to signal EOF so that the metadata can be decrypted without needing to read
         // the whole file.
@@ -752,6 +752,7 @@ mod tests {
 
         let conf = config::SyncConfig::new(
             outpath.to_str().unwrap().to_string(),
+            "MacUnitTestHost".to_string(), // TODO: use win on windows
             mapping,
             Some(ec),
             None,

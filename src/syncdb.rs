@@ -188,6 +188,7 @@ mod tests {
 
         let conf = config::SyncConfig::new(
             outpath.to_str().unwrap().to_string(),
+            "MacUnitTestHost".to_string(), // TODO: use win on windows
             mapping,
             Some(ec),
             Some(syncdb_dir.to_str().unwrap().to_string()),

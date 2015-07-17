@@ -101,8 +101,9 @@ pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
     toml
 }
 
+// Note: code should not use this directly; rather, the hostname should be obtain from the SyncConfig,
+// since it can be overridden by the config file.
 pub fn get_hostname() -> String {
-    // allow env to override (mainly for tests)
     let hostname = match env::var("GREYCRYPT_HOST") {
         Err(_) => "".to_string(),
         Ok(v) => v

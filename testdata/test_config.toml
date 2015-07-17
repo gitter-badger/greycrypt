@@ -1,11 +1,11 @@
 [Mapping]
-mac = ["johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
-winreg = ["UnitTestHost", "Descendent", "John-WinLaptop"]
+mac = ["MacUnitTestHost", "johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
+winreg = ["WinUnitTestHost", "Descendent", "John-WinLaptop"]
 
 [HostDef-mac]
 SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
 NativePaths = [
-  "/Users/john/Documents/AnotherGreyGryptTestDir",
+  "/Users/john/Documents/SomeGarbageDir",
   "/Users/john/Documents/GreyCryptTestSrc"
   ]
 home = "/Users/john"
@@ -14,7 +14,7 @@ home = "/Users/john"
 SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
 NativePaths = [
   "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
-  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir",
+  "C:\\Users\\John\\Documents\\SomeGarbageDir",
 ]
 home = "C:\\Users\\John"
 
