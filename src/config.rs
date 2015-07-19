@@ -80,47 +80,57 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     };
     let toml = util::load_toml_file(&file);
 
-    // verify config
-
-    // read "General" section
-    let host_name_override = {
-        match toml.get("General") {
+    // define some helpers for the main toml table
+    type TomlTable = BTreeMap<String, toml::Value>;
+   
+    let get_optional_section = |sname:&str| {
+        match toml.get(sname) {
             None => None,
-            Some (thing) => {
-                match thing.as_table() {
-                    None => panic!("'General' must be a table, like: [General]"),
-                    Some (table) => {
-                        match table.get("HostnameOverride") {
-                            None => None,
-                            Some(name) => {
-                                match name.as_str() {
-                                    None => panic!("HostnameOverride must be a string"),
-                                    Some(name) => Some(name.trim().to_string())
-                                }
-                            }
-                        }
+            Some (s) => {
+                match s.as_table() {
+                    None => panic!("Property '{}' must be a table, like: [{}]", sname, sname),
+                    Some (s) => {
+                        Some(s)
                     }
                 }
             }
         }
     };
-
-    let host_name = match host_name_override {
-        None => util::get_hostname(),
-        Some(name) => name 
+    
+    let get_required_section = |sname:&str| {
+        match toml.get(sname) {
+            None => panic!("Required table [{}] not found", sname),
+            Some (s) => {
+                match s.as_table() {
+                    None => panic!("Property '{}' must be a table, like: [{}]", sname, sname),
+                    Some (s) => {
+                        s
+                    }
+                }
+            }
+        }    
+    };
+    
+    let get_optional_string = |setting:&str, table:&TomlTable| {
+        match table.get(setting) {
+            None => None,
+            Some (s) => {
+                match s.as_str() {
+                    None => panic!("{} must be a string", setting),
+                    Some(name) => Some(name.trim().to_string())
+                }
+            }
+        }
     };
 
-    let hn = host_name.clone(); 
+    // load config
+    
+    let hn = get_optional_section("General")
+        .and_then(|s| get_optional_string("HostnameOverride", s))
+        .unwrap_or_else(|| util::get_hostname());
     
     let (sync_dir, native_paths, mapping) = {
-        let mval = match toml.get("Mapping") {
-            None => panic!("Unable to find [Mapping] in toml file"),
-            Some (mval) => mval
-        };
-        let mval = match mval.as_table() {
-            None => panic!("Mapping object must be table, like: [Mapping]"),
-            Some (mval) => mval
-        };
+        let mval = get_required_section("Mapping");
         
         let mut map_nicknames:HashSet<String> = HashSet::new();
         for (map_nick,hn_list) in mval {
@@ -153,16 +163,9 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
         
         // now try to find a HostDef.<hostname> object
         let hn_map_key = format!("HostDef-{}", map_nick);
-        let hn_config = match toml.get(&hn_map_key) {
-            None => panic!("No host definition found, try adding [{}]", hn_map_key),
-            Some(hn_config) => {
-                match hn_config.as_table() {
-                    None => panic!("Hostname config must be a table, like: [{}]", hn_map_key),
-                    Some(c) => c
-                }
-            } 
-        };
-        
+        let hn_config = get_optional_section(&hn_map_key)
+            .expect(&format!("No host definition found, try adding [{}]", &hn_map_key));
+            
         // find key in hn_config and return its value; panics if not found.
         let mut hn_config = hn_config.clone();
         let get_and_remove = |hn_config:&mut BTreeMap<String, toml::Value>,key:&str| {
@@ -237,7 +240,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     let c = SyncConfig::new(
         sync_dir,
-        host_name,
+        hn,
         mapping,
         Some(ec),
         None,
