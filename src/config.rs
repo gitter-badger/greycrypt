@@ -195,7 +195,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                     match p.as_str() {
                         None => panic!("'NativePaths' must contain strings, found a non-string: {:?}", p),
                         Some(s) => {
-                            native_paths.push(p.to_string());
+                            native_paths.push(s.to_string());
                         } 
                     }
                 }
