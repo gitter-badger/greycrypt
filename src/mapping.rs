@@ -98,24 +98,56 @@ mod tests {
     use std::env;
     use std::path::{PathBuf};
         
-    fn config_file() -> String {
+    #[cfg(not(target_os = "macos"))]   
+    fn unit_test_hostname() -> String {
+        "MacUnitTestHost".to_string()
+    }
+    
+    #[cfg(not(target_os = "windows"))]   
+    fn unit_test_hostname() -> String {
+        "WinUnitTestHost".to_string()
+    }
+    
+    fn get_config() -> config::SyncConfig {
         let wd = env::current_dir().unwrap();
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
         syncpath.push("test_config.toml");
-        syncpath.to_str().unwrap().to_string()
+        let config_file = syncpath.to_str().unwrap().to_string();
+        let config = config::parse(Some(config_file));
+        config::SyncConfig::new(
+            config.sync_dir().to_string(),
+            unit_test_hostname(),
+            config.mapping,
+            config.encryption_key,
+            config.syncdb_dir,
+            config.native_paths
+        )
+    }
+    
+    fn test_kw_to_dir(config:&config::SyncConfig, kw: &str, expected: &str) {
+        let expect = format!("No {} key", kw);
+        assert_eq!(config.mapping.keyword_to_dir.get(kw).expect(&expect), expected);
+    }
+    fn test_dir_to_kw(config:&config::SyncConfig, dir:&str, expected: &str) {
+        let expect = format!("No {} key", dir);
+        assert_eq!(config.mapping.dir_to_keyword.get(dir).expect(&expect), expected);
     }
     
     #[test]
+    #[cfg(not(target_os = "windows"))]
     fn parse_mapping() {
+        let config = get_config();
         
-        let config = config::parse(Some(config_file()));
         assert_eq!(config.mapping.dir_to_keyword.len(), 1);
         assert_eq!(config.mapping.keyword_to_dir.len(), 1);
 
-        assert_eq!(config.mapping.keyword_to_dir.get("HOME").expect("No HOME key"), "C:\\Users\\John");
-        assert_eq!(config.mapping.dir_to_keyword.get("C:\\USERS\\JOHN").expect("No dir key"), "HOME");
-        assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
+        test_kw_to_dir(&config, "HOME", "/Users/john");
+        test_dir_to_kw(&config, "/USERS/JOHN", "HOME");
+        assert_eq!(config.mapping.dir_to_keyword.get("/Users/john"), None); // canon paths are upcase
+        //assert_eq!(config.mapping.keyword_to_dir.get("HOME").expect("No HOME key"), "C:\\Users\\John");
+        //assert_eq!(config.mapping.dir_to_keyword.get("C:\\USERS\\JOHN").expect("No dir key"), "HOME");
+        //assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
     }
 
     fn test_kw_relpath(config:&config::SyncConfig, srcpath:&str, ex_kw:&str,ex_relpath:&str) {
@@ -135,7 +167,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn get_kw_relpath() {
-        let config = config::parse(Some(config_file()));
+        let config = get_config();
         test_kw_relpath(&config, "/Users/john/Documents/GreyCryptTestSrc/Another file.txt", "HOME", "/Documents/GreyCryptTestSrc/Another file.txt");
 
         let res = config.mapping.get_kw_relpath("/Users/Fred/Documents/GreyCryptTestSrc/Another file.txt");
