@@ -219,7 +219,7 @@ impl SyncFile {
         };
 
         let md = match crypto.decrypt(&md,true) {
-            Err(e) => return Err(format!("Failed to decrypt meta data: {:?}", e)),
+            Err(e) => return Err(format!("Failed to decrypt meta data: {:?}; are you using the correct password?", e)),
             Ok(md) => md
         };
         let md = String::from_utf8(md).unwrap();

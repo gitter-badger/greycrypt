@@ -19,6 +19,8 @@ mod trash;
 use std::collections::HashMap;
 
 extern crate getopts;
+extern crate rpassword;
+
 use getopts::Options;
 use std::env;
 
@@ -27,7 +29,7 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn main() {
+fn main() {   
     // parse command line
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();

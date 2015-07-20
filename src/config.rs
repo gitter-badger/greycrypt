@@ -3,10 +3,16 @@ use std::collections::HashSet;
 use std::path::{PathBuf};
 use std::fs::{PathExt};
 
+extern crate crypto;
+use self::crypto::sha2::Sha256;
+use self::crypto::digest::Digest;
+
 extern crate toml;
 
 use util;
 use mapping;
+
+use rpassword::read_password;
 
 pub const KEY_SIZE: usize = 32;
 
@@ -72,6 +78,16 @@ pub fn def_config_file() -> String {
     file
 }
 
+fn pw_prompt() -> String {
+    println!("Enter encryption password:");
+    let password = read_password().unwrap();
+    password.trim();
+    if password.char_indices().count() < 6 {
+        panic!("Illegal password, len < 6");
+    }
+    password
+}
+
 // TODO: this function should just return a Result instead of panicking
 pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     let file = match cfgfile {
@@ -124,10 +140,20 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     };
 
     // load config
+    let gen_sect = get_optional_section("General");
     
-    let hn = get_optional_section("General")
+    let hn = gen_sect
         .and_then(|s| get_optional_string("HostnameOverride", s))
         .unwrap_or_else(|| util::get_hostname());
+        
+    // in debug, allow password to be read from conf file
+    let password = if IS_REL {
+        pw_prompt()
+    } else {
+        gen_sect
+        .and_then(|s| get_optional_string("Password", s))
+        .unwrap_or_else(|| pw_prompt())
+    };  
     
     let (sync_dir, native_paths, mapping) = {
         let mval = get_required_section("Mapping");
@@ -229,20 +255,21 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
         (sync_dir, native_paths, mapping)
     };
-
-    // TODO: at some point I'm going to have to get this from somewhere!
-    let mut ec: [u8;KEY_SIZE] = [0; KEY_SIZE];
-    let mut next:u8 = 55;
-    for i in 0..KEY_SIZE {
-        ec[i] = next;
-        next = next + 1;
+    
+    let mut hasher = Sha256::new();
+    hasher.input_str(&password);
+    if (hasher.output_bits() / 8) != KEY_SIZE {
+        panic!("Password hash produced too many bits; got {}, only want {}", hasher.output_bits(), KEY_SIZE*8);
     }
+
+    let mut ek: [u8;KEY_SIZE] = [0; KEY_SIZE];
+    hasher.result(&mut ek);
 
     let c = SyncConfig::new(
         sync_dir,
         hn,
         mapping,
-        Some(ec),
+        Some(ek),
         None,
         native_paths
     );
