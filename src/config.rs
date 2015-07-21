@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::{PathBuf};
 use std::fs::{PathExt};
+use std::env;
+use std::io;
+use std::io::BufRead;
 
 extern crate crypto;
 use self::crypto::sha2::Sha256;
@@ -56,7 +59,7 @@ impl SyncConfig {
 
             let conf = SyncConfig {
                 sync_dir: pb.to_str().unwrap().to_string(),
-                host_name: host_name,                
+                host_name: host_name,
                 mapping: mapping,
                 encryption_key: ek,
                 syncdb_dir: syncdb_dir,
@@ -64,7 +67,7 @@ impl SyncConfig {
             };
             conf
     }
-    
+
 
 }
 
@@ -78,14 +81,43 @@ pub fn def_config_file() -> String {
     file
 }
 
+fn is_cygwin() -> bool {
+    match env::var("PATH") {
+        Err(_) => false,
+        Ok (p) => {
+            //println!("{:?}", p);
+            p.to_lowercase().contains("cygwin")
+        }
+    }
+}
+
+fn is_msys() -> bool {
+    match env::var("MSYSTEM") {
+        Err(_) => false,
+        Ok(_) => true
+    }
+}
+
 fn pw_prompt() -> String {
     println!("Enter encryption password:");
-    let password = read_password().unwrap();
-    password.trim();
+
+    let password =
+        if is_cygwin() || is_msys() {
+            // read_password() explodes on these
+            println!("Warning: MSYS or cygwin detected; password will echo");
+            let mut line = String::new();
+            let stdin = io::stdin();
+            stdin.lock().read_line(&mut line).unwrap();
+            line
+        } else {
+            read_password().unwrap()
+        };
+    let password = password.trim();
+
     if password.char_indices().count() < 6 {
         panic!("Illegal password, len < 6");
     }
-    password
+    password.to_string()
 }
 
 // TODO: this function should just return a Result instead of panicking
@@ -98,7 +130,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     // define some helpers for the main toml table
     type TomlTable = BTreeMap<String, toml::Value>;
-   
+
     let get_optional_section = |sname:&str| {
         match toml.get(sname) {
             None => None,
@@ -112,7 +144,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             }
         }
     };
-    
+
     let get_required_section = |sname:&str| {
         match toml.get(sname) {
             None => panic!("Required table [{}] not found", sname),
@@ -124,9 +156,9 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                     }
                 }
             }
-        }    
+        }
     };
-    
+
     let get_optional_string = |setting:&str, table:&TomlTable| {
         match table.get(setting) {
             None => None,
@@ -141,11 +173,11 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     // load config
     let gen_sect = get_optional_section("General");
-    
+
     let hn = gen_sect
         .and_then(|s| get_optional_string("HostnameOverride", s))
         .unwrap_or_else(|| util::get_hostname());
-        
+
     // in debug, allow password to be read from conf file
     let password = if IS_REL {
         pw_prompt()
@@ -153,11 +185,11 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
         gen_sect
         .and_then(|s| get_optional_string("Password", s))
         .unwrap_or_else(|| pw_prompt())
-    };  
-    
+    };
+
     let (sync_dir, native_paths, mapping) = {
         let mval = get_required_section("Mapping");
-        
+
         let mut map_nicknames:HashSet<String> = HashSet::new();
         for (map_nick,hn_list) in mval {
             match hn_list.as_slice() {
@@ -169,29 +201,29 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                             Some (lhn) => {
                                 if lhn == hn {
                                     map_nicknames.insert(map_nick.to_string());
-                                }                            
+                                }
                             }
                         }
                     }
                 }
-            } 
+            }
         }
-        
+
         // host must be mapped to 1 nick
         if map_nicknames.len() == 0 {
-            panic!("Unable to map hostname: try adding a line to [Mapping] like: mynick = [\"{}\"]", hn); 
+            panic!("Unable to map hostname: try adding a line to [Mapping] like: mynick = [\"{}\"]", hn);
         }
         if map_nicknames.len() > 1 {
             panic!("Too many mappings for hostname found, make sure [Mapping] contains only one relationship for host {}", hn);
         }
 
-        let map_nick = map_nicknames.iter().nth(0).unwrap();        
-        
+        let map_nick = map_nicknames.iter().nth(0).unwrap();
+
         // now try to find a HostDef.<hostname> object
         let hn_map_key = format!("HostDef-{}", map_nick);
         let hn_config = get_optional_section(&hn_map_key)
             .expect(&format!("No host definition found, try adding [{}]", &hn_map_key));
-            
+
         // find key in hn_config and return its value; panics if not found.
         let mut hn_config = hn_config.clone();
         let get_and_remove = |hn_config:&mut BTreeMap<String, toml::Value>,key:&str| {
@@ -204,7 +236,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             hn_config.remove(key);
             sd
         };
-        
+
         let sync_dir = match get_and_remove(&mut hn_config,"SyncDir").as_str() {
             None => panic!("Value for SyncDir must be a string"),
             Some (sd) => {
@@ -212,10 +244,10 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                 if !pp.is_dir() {
                     println!("Warning: sync directory does not exist: {}", sd);
                 }
-                sd.to_string()                
+                sd.to_string()
             }
         };
-        
+
         let mut native_paths:Vec<String> = Vec::new();
         match get_and_remove(&mut hn_config,"NativePaths").as_slice() {
             None => panic!("'NativePaths' must be a list of strings in host def: {}", hn_map_key),
@@ -225,17 +257,17 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                         None => panic!("'NativePaths' must contain strings, found a non-string: {:?}", p),
                         Some(s) => {
                             native_paths.push(s.to_string());
-                        } 
+                        }
                     }
                 }
             }
         }
-        
+
         if native_paths.len() == 0 {
             panic!("No NativePaths are configured, cannot continue");
         }
-        
-        
+
+
         // all the other key/value pairs are kw->dir mappings
         let map_count = hn_config.len();
         if map_count == 0 {
@@ -250,12 +282,12 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             Ok(m) => m,
             Err(msg) => panic!(msg)
         };
-        
+
         //println!("{:?}",mapping);
 
         (sync_dir, native_paths, mapping)
     };
-    
+
     let mut hasher = Sha256::new();
     hasher.input_str(&password);
     if (hasher.output_bits() / 8) != KEY_SIZE {
