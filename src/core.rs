@@ -796,7 +796,10 @@ pub fn do_sync(state:&mut SyncState) {
         // the syncfile name may have been remapped, check state
         let syncfile = {
             match state.sync_files_for_id.get(&sid) {
-                None => syncfile,
+                None => {
+                    //println!("name not remapped for native file {}, sid {}", &nf, &sid); // TODO: verbose log mode
+                    syncfile
+                },  
                 Some (filelist) => PathBuf::from(&filelist[0])
             }
         };

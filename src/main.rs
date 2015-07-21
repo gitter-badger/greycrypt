@@ -17,6 +17,7 @@ mod commands;
 mod trash;
 
 use std::collections::HashMap;
+use std::thread;
 
 extern crate getopts;
 extern crate rpassword;
@@ -35,6 +36,7 @@ fn main() {
     let program = args[0].clone();
     let mut opts = Options::new();
     opts.optopt("s", "", "show syncfile metadata", "NAME");
+    opts.optopt("t", "", "set poll interval (in seconds)", "POLLINT");
     opts.optflag("c", "", "show syncfile metadata for all conflicted files");
     opts.optflag("h", "help", "print this help menu");
     let matches = match opts.parse(&args[1..]) {
@@ -59,6 +61,19 @@ fn main() {
         sync_files_for_id: HashMap::new()
     };
 
+    let poll_interval = 
+        if matches.opt_present("t") {
+            match matches.opt_str("t") {
+                None => return print_usage(&program,opts),
+                Some (i) => match u32::from_str_radix(&i,10) {
+                    Err(e) => panic!("Unable to parse poll interval: {}", e),
+                    Ok(i) => i
+                }
+            }
+        } else {
+            3
+        };
+    
     // process args
     if matches.opt_present("s") {
         // inspect syncfile
@@ -75,7 +90,13 @@ fn main() {
         commands::show_conflicted_syncfile_meta(&mut state);
     }
     else {
-        // run standard sync
-        core::do_sync(&mut state);
+        // run standard sync in loop
+        println!("Poll interval: {} seconds", poll_interval);
+        
+        loop {    
+            core::do_sync(&mut state);
+            thread::sleep_ms(poll_interval * 1000);
+        }
+        
     }
 }
