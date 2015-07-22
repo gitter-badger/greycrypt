@@ -58,7 +58,8 @@ fn main() {
     let mut state = core::SyncState {
         syncdb: syncdb,
         conf: conf,
-        sync_files_for_id: HashMap::new()
+        sync_files_for_id: HashMap::new(),
+        sync_file_cache: core::SyncFileCache::new()
     };
 
     let poll_interval = 

@@ -456,9 +456,13 @@ impl SyncFile {
         }
 
         // close input file now
-        self.sync_file_state = SyncFileState::Closed;
+        self.close();
 
         Ok(())
+    }
+    
+    pub fn close(&mut self) {
+        self.sync_file_state = SyncFileState::Closed;
     }
 
     pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {

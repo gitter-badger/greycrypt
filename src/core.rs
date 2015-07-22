@@ -33,10 +33,46 @@ enum SyncAction {
     CheckFilesEqualElseConflict(SyncData)
 }
 
+pub struct SyncFileCache {
+    map: HashMap<String, syncfile::SyncFile>
+}
+
+impl SyncFileCache {
+    pub fn new() -> SyncFileCache {
+        SyncFileCache {
+            map: HashMap::new()
+        }
+    }
+    
+    pub fn get(&mut self, conf: &config::SyncConfig, syncfile: &PathBuf) -> &syncfile::SyncFile {
+        let pbs = match syncfile.to_str() {
+            None => panic!("Failed to make string from pathbuf: {:?}", syncfile),
+            Some (pbs) => pbs.to_string()
+        };
+        
+        if !self.map.contains_key(&pbs) {
+            let mut sf = match syncfile::SyncFile::from_syncfile(&conf,syncfile) {
+                Err(e) => panic!("Can't read syncfile {:?}: {:?}", syncfile, e),
+                Ok(sf) => sf
+            };
+            // close the sync file, which means that entries from the cache can't be used to read the actual data
+            sf.close();
+            
+            self.map.insert(pbs.clone(), sf);         
+        }
+        self.map.get(&pbs).unwrap()
+    }
+    
+    pub fn flush(&mut self) {
+        self.map.clear();
+    }
+}
+
 pub struct SyncState {
     pub conf: config::SyncConfig,
     pub syncdb: syncdb::SyncDb,
     pub sync_files_for_id: HashMap<String,Vec<String>>,
+    pub sync_file_cache: SyncFileCache,
 }
 
 impl SyncState {
@@ -60,10 +96,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Err(e) => panic!("Error getting file mtime: {:?}", e),
         Ok(mtime) => mtime
     };
-    let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
-        Ok(sf) => sf
-    };
+    let sf = state.sync_file_cache.get(&state.conf,&sd.syncfile);
 
     let sync_entry = match state.syncdb.get(&sf) {
         None => {
@@ -216,10 +249,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     //println!("Checking revguid on sid: {}",&sd.syncid);
 
-    let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
-        Ok(sf) => sf
-    };
+    let sf = state.sync_file_cache.get(&state.conf,&sd.syncfile);
 
     let sync_entry = state.syncdb.get(&sf);
 
@@ -632,10 +662,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
         let mut valid_files:Vec<String> = Vec::new();
         for sfname in files.iter() {
             let pb = PathBuf::from(&sfname);
-            let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
-                Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sfname, e),
-                Ok(sf) => sf
-            };
+            let sf = state.sync_file_cache.get(&state.conf,&pb);
             if !is_ignored(&sf.nativefile) {
                 valid_files.push(sfname.clone());
             } else {
@@ -680,10 +707,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                 // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
                 // because the dedup may have changed the active revguid
                 let pb = PathBuf::from(&files[0]);
-                let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
-                    Err(e) => panic!("Can't read syncfile {:?}: {:?}", &pb, e),
-                    Ok(sf) => sf
-                };
+                let sf = state.sync_file_cache.get(&state.conf,&pb);
                 let (do_update,mtime) = {
                     match state.syncdb.get(&sf) {
                         Some(entry) => {
@@ -730,6 +754,8 @@ fn is_ignored(f:&str) -> bool {
 }
 
 pub fn do_sync(state:&mut SyncState) {
+    state.sync_file_cache.flush();
+    
     dedup_syncfiles(state);
 
     state.sync_files_for_id = find_all_syncfiles(state);
