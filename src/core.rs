@@ -753,6 +753,22 @@ fn is_ignored(f:&str) -> bool {
     false
 }
 
+// Scan the collection of all discovered sync files, and filter out those that 
+// can be disqualified (conflicted, not mapped, etc).
+// Print a message for each rejected file, and return the list of valid files.
+fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
+    let mut sync_files:Vec<String> = Vec::new();
+    for (sid,files) in &state.sync_files_for_id {
+        // don't process conflicts
+        if state.is_conflicted(sid) {
+            println!("Ignoring conflicted sync file: {}", files[0]);
+            continue;
+        } 
+        sync_files.push(files[0].to_string());
+    }
+    sync_files
+}
+
 pub fn do_sync(state:&mut SyncState) {
     state.sync_file_cache.flush();
     
@@ -842,14 +858,7 @@ pub fn do_sync(state:&mut SyncState) {
     }
 
     // scan sync files
-    let mut sync_files:Vec<String> = Vec::new();
-    for (sid,files) in &state.sync_files_for_id {
-        if !state.is_conflicted(sid) {
-            sync_files.push(files[0].to_string());
-        } else {
-            println!("Ignoring conflicted sync file: {}", files[0]);
-        }
-    }
+    let sync_files:Vec<String> = filter_syncfiles(state);
 
     for sf in &sync_files {
         let syncfile = PathBuf::from(sf);
