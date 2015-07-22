@@ -764,7 +764,39 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
             println!("Ignoring conflicted sync file: {}", files[0]);
             continue;
         } 
-        sync_files.push(files[0].to_string());
+        
+        let syncfile = files[0].to_string();
+        
+        // don't process syncfiles that use a relpath that isn't explicitly specified as a native
+        // path on this machine.  This allows the user to skip unpacking a set of files on a given machine.
+        let pb = PathBuf::from(&syncfile);
+        let sf = state.sync_file_cache.get(&state.conf,&pb);
+        
+        match state.conf.native_paths.iter().find(|np| {
+            let np = util::canon_path(np);
+            match np.ends_with(&sf.relpath) {
+                true => true,
+                false => {
+                    // relpath must be a file (we don't sync directories explicitly), 
+                    // so check to see if it's parent dir matches
+                    let pb = PathBuf::from(&sf.relpath);
+                    match pb.parent() {
+                        None => false,
+                        Some (dir) => {
+                            np.ends_with(dir.to_str().unwrap())
+                        }
+                    }                
+                }
+            }
+        }) {
+            None => { 
+                println!("Ignoring sync file, path not specified as native on this machine: {}", sf.relpath);
+                continue;
+            }
+            Some (_) => ()
+        }
+        
+        sync_files.push(syncfile);
     }
     sync_files
 }
