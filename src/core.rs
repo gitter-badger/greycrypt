@@ -784,8 +784,8 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
             //println!("np {:?} rp {:?}", nat_relpath, sf.relpath);
             sf.relpath.starts_with(&nat_relpath)
         }) {
-            None => {
-                println!("Ignoring sync file, path not specified as native on this machine: {}", sf.relpath);
+            None => { 
+                println!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id);
                 continue;
             }
             Some (_) => ()
