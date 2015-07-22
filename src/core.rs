@@ -43,13 +43,13 @@ impl SyncFileCache {
             map: HashMap::new()
         }
     }
-    
+
     pub fn get(&mut self, conf: &config::SyncConfig, syncfile: &PathBuf) -> &syncfile::SyncFile {
         let pbs = match syncfile.to_str() {
             None => panic!("Failed to make string from pathbuf: {:?}", syncfile),
             Some (pbs) => pbs.to_string()
         };
-        
+
         if !self.map.contains_key(&pbs) {
             let mut sf = match syncfile::SyncFile::from_syncfile(&conf,syncfile) {
                 Err(e) => panic!("Can't read syncfile {:?}: {:?}", syncfile, e),
@@ -57,12 +57,12 @@ impl SyncFileCache {
             };
             // close the sync file, which means that entries from the cache can't be used to read the actual data
             sf.close();
-            
-            self.map.insert(pbs.clone(), sf);         
+
+            self.map.insert(pbs.clone(), sf);
         }
         self.map.get(&pbs).unwrap()
     }
-    
+
     pub fn flush(&mut self) {
         self.map.clear();
     }
@@ -753,7 +753,7 @@ fn is_ignored(f:&str) -> bool {
     false
 }
 
-// Scan the collection of all discovered sync files, and filter out those that 
+// Scan the collection of all discovered sync files, and filter out those that
 // can be disqualified (conflicted, not mapped, etc).
 // Print a message for each rejected file, and return the list of valid files.
 fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
@@ -763,39 +763,34 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
         if state.is_conflicted(sid) {
             println!("Ignoring conflicted sync file: {}", files[0]);
             continue;
-        } 
-        
+        }
+
         let syncfile = files[0].to_string();
-        
+
         // don't process syncfiles that use a relpath that isn't explicitly specified as a native
         // path on this machine.  This allows the user to skip unpacking a set of files on a given machine.
         let pb = PathBuf::from(&syncfile);
         let sf = state.sync_file_cache.get(&state.conf,&pb);
-        
+
+        let mapping = &state.conf.mapping;
+
         match state.conf.native_paths.iter().find(|np| {
-            let np = util::canon_path(np);
-            match np.ends_with(&sf.relpath) {
-                true => true,
-                false => {
-                    // relpath must be a file (we don't sync directories explicitly), 
-                    // so check to see if it's parent dir matches
-                    let pb = PathBuf::from(&sf.relpath);
-                    match pb.parent() {
-                        None => false,
-                        Some (dir) => {
-                            np.ends_with(dir.to_str().unwrap())
-                        }
-                    }                
-                }
-            }
+            let res = mapping.get_kw_relpath(np);
+            let (_,nat_relpath) = match res {
+                None => return false,
+                Some(stuff) => stuff
+            };
+
+            //println!("np {:?} rp {:?}", nat_relpath, sf.relpath);
+            sf.relpath.starts_with(&nat_relpath)
         }) {
-            None => { 
+            None => {
                 println!("Ignoring sync file, path not specified as native on this machine: {}", sf.relpath);
                 continue;
             }
             Some (_) => ()
         }
-        
+
         sync_files.push(syncfile);
     }
     sync_files
@@ -803,7 +798,7 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
 
 pub fn do_sync(state:&mut SyncState) {
     state.sync_file_cache.flush();
-    
+
     dedup_syncfiles(state);
 
     state.sync_files_for_id = find_all_syncfiles(state);
@@ -873,7 +868,7 @@ pub fn do_sync(state:&mut SyncState) {
                 None => {
                     //println!("name not remapped for native file {}, sid {}", &nf, &sid); // TODO: verbose log mode
                     syncfile
-                },  
+                },
                 Some (filelist) => PathBuf::from(&filelist[0])
             }
         };
