@@ -61,7 +61,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Ok(mtime) => mtime
     };
     let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
         Ok(sf) => sf
     };
 
@@ -143,7 +143,7 @@ fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
             // because the one used for the equal check has
             // already been "expended"
             let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-                Err(e) => panic!("Can't read syncfile: {:?}", e),
+                Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
                 Ok(sf) => sf
             };
             println!("Updating native file: {:?}", sf.nativefile);
@@ -217,7 +217,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     //println!("Checking revguid on sid: {}",&sd.syncid);
 
     let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
         Ok(sf) => sf
     };
 
@@ -326,7 +326,7 @@ fn do_update_native_file(sf:&mut syncfile::SyncFile, state:&mut SyncState) {
 
 fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
         Ok(sf) => sf
     };
 
@@ -375,7 +375,7 @@ fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     // Or a delete count in the file so the user can see how many systems processed the delete in some
     // kind of control panel.
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
         Ok(sf) => sf
     };
     handle_delete(state, &mut sf, &sd.syncfile, true);
@@ -385,7 +385,7 @@ fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
 fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
-        Err(e) => panic!("Can't read syncfile: {:?}", e),
+        Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
         Ok(sf) => sf
     };
     // sanity
@@ -633,7 +633,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
         for sfname in files.iter() {
             let pb = PathBuf::from(&sfname);
             let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
-                Err(e) => panic!("Can't read syncfile: {:?}", e),
+                Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sfname, e),
                 Ok(sf) => sf
             };
             if !is_ignored(&sf.nativefile) {
@@ -681,7 +681,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                 // because the dedup may have changed the active revguid
                 let pb = PathBuf::from(&files[0]);
                 let sf = match syncfile::SyncFile::from_syncfile(&state.conf,&pb) {
-                    Err(e) => panic!("Can't read syncfile: {:?}", e),
+                    Err(e) => panic!("Can't read syncfile {:?}: {:?}", &pb, e),
                     Ok(sf) => sf
                 };
                 let (do_update,mtime) = {
