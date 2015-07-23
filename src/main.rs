@@ -6,6 +6,9 @@
 
 #![feature(append)] // for sync dedup, hopefully can remove
 
+#[macro_use]
+extern crate log;
+
 mod util;
 mod config;
 mod mapping;
@@ -25,12 +28,42 @@ extern crate rpassword;
 use getopts::Options;
 use std::env;
 
+use log::{LogRecord, LogLevel, LogMetadata};
+
+struct SimpleLogger;
+
+impl log::Log for SimpleLogger {
+    fn enabled(&self, metadata: &LogMetadata) -> bool {
+        metadata.level() <= LogLevel::Info
+    }
+
+    fn log(&self, record: &LogRecord) {
+        if self.enabled(record.metadata()) {
+            println!("{} - {}", record.level(), record.args());
+        }
+    }        
+}
+
+impl SimpleLogger {
+    pub fn init() -> Result<(), log::SetLoggerError> {
+        log::set_logger(|max_log_level| {
+            max_log_level.set(log::LogLevelFilter::Info);
+            Box::new(SimpleLogger)
+        })
+    }
+}
+
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
     print!("{}", opts.usage(&brief));
 }
 
 fn main() {   
+    match SimpleLogger::init() {
+        Err(e) => panic!("Failed to init logger: {}", e),
+        Ok(_) => ()
+    }
+    
     // parse command line
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
@@ -92,12 +125,12 @@ fn main() {
     }
     else {
         // run standard sync in loop
-        println!("Poll interval: {} seconds", poll_interval);
+        info!("Starting");
+        info!("Poll interval: {} seconds", poll_interval);
         
         loop {    
             core::do_sync(&mut state);
             thread::sleep_ms(poll_interval * 1000);
-        }
-        
+        }  
     }
 }

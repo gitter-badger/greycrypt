@@ -169,7 +169,7 @@ fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     let outfile = {
         if equal {
-            println!("Native file matches local, updating syncdb: {:?}", sf.nativefile);
+            info!("Native file matches local, updating syncdb: {:?}", sf.nativefile);
             native_fname.to_str().unwrap().to_string()
         } else {
             // need to use a new SF here to unpack data,
@@ -179,7 +179,7 @@ fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
                 Err(e) => panic!("Can't read syncfile {:?}: {:?}", &sd.syncfile, e),
                 Ok(sf) => sf
             };
-            println!("Updating native file: {:?}", sf.nativefile);
+            info!("Updating native file: {:?}", sf.nativefile);
             let res = sf.restore_native(&state.conf);
             let outfile = {
                 match res {
@@ -209,7 +209,7 @@ fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     };
     let nativefile_str = nativefile.to_str().unwrap();
 
-    println!("Copying native data in {:?} to {:?}", nativefile_str, sd.syncfile.file_name().unwrap());
+    info!("Copying native data in {:?} to {:?}", nativefile_str, sd.syncfile.file_name().unwrap());
 
     let native_mtime = match util::get_file_mtime(&nativefile_str) {
         Err(e) => panic!("Error getting file mtime: {:?}", e),
@@ -270,10 +270,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         SyncAction::CreateNewNativeFile(sd.clone())
     } else {
         // local delete
-        // TODO: this can fire erroneously if this machine isn't actually resyncing
-        // the given native path; should handle that case (and maybe only unpack sync files
-        // in the first place if the unpack directory is keyword-mapped)
-        println!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
+        info!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
 
         SyncAction::ProcessNativeDelete(sd.clone())
     }
@@ -325,7 +322,7 @@ fn check_files_equal_else_conflict(state:&mut SyncState,sd:&SyncData) -> SyncAct
            Ok(_) => ()
        }
    } else {
-       println!("Conflict detected on {:?}, local data differs from remote.  Try renaming local file and resyncing to restore remote data.", native_fname);
+       warn!("Conflict detected on {:?}, local data differs from remote.  Try renaming local file and resyncing to restore remote data.", native_fname);
    }
 
    SyncAction::Nothing
@@ -349,7 +346,7 @@ fn do_update_native_file(sf:&mut syncfile::SyncFile, state:&mut SyncState) {
                 Ok(_) => ()
             }
 
-            println!("Wrote new file: {:?}", &sf.nativefile);
+            info!("Wrote new file: {:?}", &sf.nativefile);
         }
     };
 }
@@ -372,7 +369,7 @@ fn create_new_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 fn handle_delete(state:&mut SyncState, sf:&mut syncfile::SyncFile, syncpath: &PathBuf, mark_sf_as_deleted:bool) {
     let nativefile_path = PathBuf::from(&sf.nativefile);
     if nativefile_path.is_file() {
-        println!("Sending deleted local file to Trash: {}", &sf.nativefile);
+        info!("Sending deleted local file to Trash: {}", &sf.nativefile);
         match trash::send_to_trash(&sf.nativefile) {
             Err(e) => panic!("Failed to trash file: {:?}", e),
             Ok(_) => ()
@@ -451,7 +448,7 @@ fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         // we should have already handled this...but log if the native file exists (bug)
         let pb = PathBuf::from(&sf.nativefile);
         if pb.is_file() {
-            println!("Error: left behind a file that should have been deleted: {:?}", sf.nativefile);
+            error!("Left behind a file that should have been deleted: {:?}", sf.nativefile);
         }
         SyncAction::Nothing
     }
@@ -619,9 +616,9 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
             let pb_par = pb.parent().unwrap();
             let dname = pb_par.to_str().unwrap();
 
-            println!("removing dup file: {}", dup);
+            info!("Removing dup file: {}", dup);
             match remove_file(&dup) {
-                Err(e) => println!("Warning: failed to remove dup sync file: {}: {}", dup, e),
+                Err(e) => warn!("Failed to remove dup sync file: {}: {}", dup, e),
                 Ok(_) => ()
             }
 
@@ -666,7 +663,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             if !is_ignored(&sf.nativefile) {
                 valid_files.push(sfname.clone());
             } else {
-                println!("Removing syncfile for ignored native file: {:?}", &sf.nativefile);
+                info!("Removing syncfile for ignored native file: {:?}", &sf.nativefile);
                 match remove_file(sfname) {
                     Err(e) => panic!("Failed to remove syncfile: {:?}", e),
                     Ok(_) => ()
@@ -726,12 +723,12 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                     match state.syncdb.update(&sf,mtime) {
                         Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
                         Ok(_) => {
-                            println!("Changed sync revguid for {}", &files[0]);
+                            info!("Changed sync revguid for {}", &files[0]);
                         }
                     }
                 }
             } else {
-                println!("conflicts: {}", sid)
+                warn!("conflicts: {}", sid)
             }
         }
 
@@ -761,7 +758,7 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
     for (sid,files) in &state.sync_files_for_id {
         // don't process conflicts
         if state.is_conflicted(sid) {
-            println!("Ignoring conflicted sync file: {}", files[0]);
+            warn!("Ignoring conflicted sync file: {}", files[0]);
             continue;
         }
 
@@ -785,7 +782,7 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
             sf.relpath.starts_with(&nat_relpath)
         }) {
             None => { 
-                println!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id);
+                warn!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id);
                 continue;
             }
             Some (_) => ()
@@ -818,7 +815,7 @@ pub fn do_sync(state:&mut SyncState) {
             for p in native_paths {
                 let pp = PathBuf::from(p);
                 if !pp.exists() {
-                    println!("WARN: path does not exist: {}", p);
+                    warn!("Path does not exist: {}", p);
                 }
                 if pp.is_file() {
                     visitor(&pp);
@@ -842,7 +839,7 @@ pub fn do_sync(state:&mut SyncState) {
         //println!("native file: {}", nf);
         let (sid,syncfile) = match syncfile::SyncFile::get_sync_id_and_path(&state.conf,&nf) {
             Err(e) => {
-                println!("Ignoring native file: {}: {}", &nf, &e);
+                warn!("Ignoring native file: {}: {}", &nf, &e);
                 continue
             },
             Ok(pair) => pair
@@ -855,9 +852,9 @@ pub fn do_sync(state:&mut SyncState) {
         // if its conflicted, skip
         if state.is_conflicted(&sid) {
             let cflicts = state.sync_files_for_id.get(&sid).unwrap();
-            println!("Skipping conflicted native file: {}:", nf);
+            warn!("Skipping conflicted native file: {}:", nf);
             for c in cflicts {
-                println!("   {  }", c);
+                warn!("   {  }", c);
             }
             continue
         }
@@ -939,7 +936,7 @@ pub fn do_sync(state:&mut SyncState) {
     for (sid,action) in actions {
         match action {
             SyncAction::Nothing => (),
-            _ => println!("Warning: leftover action in list: {:?} for {:?}", action, sid)
+            _ => warn!("Leftover action in list: {:?} for {:?}", action, sid)
         }
     }
 }

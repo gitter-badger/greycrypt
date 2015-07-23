@@ -289,7 +289,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     };
 
     let mut hasher = Sha256::new();
-    hasher.input_str(&password);
+    hasher.input_str(&password); // TODO: maybe apply salt, but, we only keep it in memory...
     if (hasher.output_bits() / 8) != KEY_SIZE {
         panic!("Password hash produced too many bits; got {}, only want {}", hasher.output_bits(), KEY_SIZE*8);
     }
