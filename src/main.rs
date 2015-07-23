@@ -18,8 +18,8 @@ mod syncdb;
 mod core;
 mod commands;
 mod trash;
+mod logging;
 
-use std::collections::HashMap;
 use std::thread;
 
 extern crate getopts;
@@ -28,30 +28,7 @@ extern crate rpassword;
 use getopts::Options;
 use std::env;
 
-use log::{LogRecord, LogLevel, LogMetadata};
 
-struct SimpleLogger;
-
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &LogMetadata) -> bool {
-        metadata.level() <= LogLevel::Info
-    }
-
-    fn log(&self, record: &LogRecord) {
-        if self.enabled(record.metadata()) {
-            println!("{} - {}", record.level(), record.args());
-        }
-    }        
-}
-
-impl SimpleLogger {
-    pub fn init() -> Result<(), log::SetLoggerError> {
-        log::set_logger(|max_log_level| {
-            max_log_level.set(log::LogLevelFilter::Info);
-            Box::new(SimpleLogger)
-        })
-    }
-}
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -59,10 +36,10 @@ fn print_usage(program: &str, opts: Options) {
 }
 
 fn main() {   
-    match SimpleLogger::init() {
+    let log_util = match logging::SimpleLogger::init() {
         Err(e) => panic!("Failed to init logger: {}", e),
-        Ok(_) => ()
-    }
+        Ok(l) => l
+    };
     
     // parse command line
     let args: Vec<String> = env::args().collect();
@@ -88,12 +65,7 @@ fn main() {
         Ok(sdb) => sdb
     };
 
-    let mut state = core::SyncState {
-        syncdb: syncdb,
-        conf: conf,
-        sync_files_for_id: HashMap::new(),
-        sync_file_cache: core::SyncFileCache::new()
-    };
+    let mut state = core::SyncState::new(conf,syncdb,log_util);
 
     let poll_interval = 
         if matches.opt_present("t") {

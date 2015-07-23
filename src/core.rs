@@ -10,6 +10,7 @@ use config;
 use syncfile;
 use syncdb;
 use trash;
+use logging;
 
 extern crate glob;
 
@@ -73,9 +74,20 @@ pub struct SyncState {
     pub syncdb: syncdb::SyncDb,
     pub sync_files_for_id: HashMap<String,Vec<String>>,
     pub sync_file_cache: SyncFileCache,
+    pub log_util: logging::LoggerUtil
 }
 
 impl SyncState {
+    pub fn new(conf:config::SyncConfig, syncdb: syncdb::SyncDb, log_util: logging::LoggerUtil) -> SyncState {
+        SyncState {
+            syncdb: syncdb,
+            conf: conf,
+            sync_files_for_id: HashMap::new(),
+            sync_file_cache: SyncFileCache::new(),
+            log_util: log_util
+        }
+    }  
+    
     pub fn is_conflicted(&self,sid:&str) -> bool {
         match self.sync_files_for_id.get(sid) {
             None => false,
@@ -782,7 +794,7 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
             sf.relpath.starts_with(&nat_relpath)
         }) {
             None => { 
-                warn!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id);
+                state.log_util.warn_once(&format!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id));
                 continue;
             }
             Some (_) => ()
