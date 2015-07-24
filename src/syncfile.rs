@@ -800,8 +800,7 @@ mod tests {
                 assert_eq!(sf.is_binary, false);
                 assert_eq!(sf.is_deleted, false);
                 // file should be open
-                match sf.sync_file_state {
-                    syncfile::SyncFileState::Open(ref ofs) => {
+                if let syncfile::SyncFileState::Open(ref ofs) = sf.sync_file_state {
                         // assume handle is valid (will check anyway when we read data)
                         // iv should be non-null (though its possible that it could
                         // be randomly all zeros, that should be very rare)
@@ -809,9 +808,9 @@ mod tests {
                         for x in 0..syncfile::IV_SIZE {
                             if ofs.iv[x] == 0 { zcount = zcount + 1 }
                         }
-                        assert!(zcount != syncfile::IV_SIZE)
-                    },
-                    _ => panic!("Unexpected file state")
+                        assert!(zcount != syncfile::IV_SIZE)                
+                } else {
+                    panic!("Unexpected file state")
                 }
 
                 // remap the keyword var to the "nativedir" under testdata

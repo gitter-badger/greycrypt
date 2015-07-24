@@ -91,7 +91,7 @@ impl SyncDb {
                 Ok(f) => f
             };
 
-            match writeln!(f, "revguid: {}", &entry.revguid.to_string()) {
+            match writeln!(f, "revguid: {}", &entry.revguid.to_owned()) {
                 Err(e) => return Err(format!("{:?}", e)),
                 Ok(_) => ()
             }
@@ -121,7 +121,6 @@ impl SyncDb {
                 return None
             }
 
-            //let toml = util::load_toml_file(&"mapping.toml".to_string());
             let entry_text = util::slurp_text_file(&storepath.to_str().unwrap());
             let lines:Vec<&str> = entry_text.lines().collect();
             let hm = util::string_lines_to_hashmap(lines);
@@ -143,7 +142,7 @@ impl SyncDb {
             };
 
             assert!(!self.cache.contains_key(&sf.id));
-            self.cache.insert(sf.id.to_string(), entry);
+            self.cache.insert(sf.id.to_owned(), entry);
             self.cache.get(&sf.id)
         }
     }
@@ -187,11 +186,11 @@ mod tests {
         let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig::new(
-            outpath.to_str().unwrap().to_string(),
-            "MacUnitTestHost".to_string(), // TODO: use win on windows
+            outpath.to_str().unwrap().to_owned(),
+            "MacUnitTestHost".to_owned(), // TODO: use win on windows
             mapping,
             Some(ec),
-            Some(syncdb_dir.to_str().unwrap().to_string()),
+            Some(syncdb_dir.to_str().unwrap().to_owned()),
             Vec::new());
         conf
     }
