@@ -1,3 +1,6 @@
+#![feature(plugin)]
+#![plugin(clippy)]
+
 // this is really spammy for me, will have to enable periodically
 #![allow(dead_code)]
 #![allow(unused_variables)]
