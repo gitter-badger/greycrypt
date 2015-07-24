@@ -147,6 +147,7 @@ impl SyncDb {
         }
     }
 
+    #[cfg(test)]
     pub fn flush_cache(&mut self) {
         self.cache.clear();
     }

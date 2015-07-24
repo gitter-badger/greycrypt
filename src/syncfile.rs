@@ -609,7 +609,7 @@ impl SyncFile {
 
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
         self.set_deleted();
-        let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
+        let (outname,_,_,_) = match self.write_syncfile_header(conf,override_path) {
             Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
         };
