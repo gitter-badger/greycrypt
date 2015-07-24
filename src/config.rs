@@ -176,7 +176,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
 
     let hn = gen_sect
         .and_then(|s| get_optional_string("HostnameOverride", s))
-        .unwrap_or_else(|| util::get_hostname());
+        .unwrap_or_else(util::get_hostname);
 
     // in debug, allow password to be read from conf file
     let password = if IS_REL {
@@ -184,7 +184,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     } else {
         gen_sect
         .and_then(|s| get_optional_string("Password", s))
-        .unwrap_or_else(|| pw_prompt())
+        .unwrap_or_else(pw_prompt)
     };
 
     let (sync_dir, native_paths, mapping) = {
