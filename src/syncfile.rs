@@ -639,7 +639,7 @@ impl SyncFile {
             let mut buf = &mut v;
 
             loop {
-                let read_res = fin.read(&mut buf);
+                let read_res = fin.read(buf);
                 match read_res {
                     Err(e) => { return Err(format!("Read error: {}", e)) },
                     Ok(num_read) => {

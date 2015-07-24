@@ -210,7 +210,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
         }
 
         // host must be mapped to 1 nick
-        if map_nicknames.len() == 0 {
+        if map_nicknames.is_empty() {
             panic!("Unable to map hostname: try adding a line to [Mapping] like: mynick = [\"{}\"]", hn);
         }
         if map_nicknames.len() > 1 {
@@ -263,7 +263,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             }
         }
 
-        if native_paths.len() == 0 {
+        if native_paths.is_empty() {
             panic!("No NativePaths are configured, cannot continue");
         }
 

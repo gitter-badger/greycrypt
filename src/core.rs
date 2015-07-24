@@ -591,7 +591,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
 
     let mut paths = nondups;
 
-    if dups.len() > 0 {
+    if !dups.is_empty() {
         // need to find the file with lowest revguid (including the candidate), so
         // push it on to the dup list
         dups.push((cand_sf,candidate.clone()));
@@ -616,7 +616,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
         paths.insert(dup_cand_idx, candidate.clone());
     }
 
-    if dups.len() > 0 {
+    if !dups.is_empty() {
         // println!("for candidate: {}",candidate);
         // println!(" will use: {}", dups[0].1);
         // println!(" and remove:");
