@@ -1,3 +1,6 @@
+[General]
+Password = "5up3r53cr3t"
+
 [Mapping]
 mac = ["MacUnitTestHost", "johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
 winreg = ["WinUnitTestHost", "Descendent", "John-WinLaptop"]
