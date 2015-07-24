@@ -58,7 +58,7 @@ impl SyncConfig {
             }
 
             let conf = SyncConfig {
-                sync_dir: pb.to_str().unwrap().to_string(),
+                sync_dir: pb.to_str().unwrap().to_owned(),
                 host_name: host_name,
                 mapping: mapping,
                 encryption_key: ek,
@@ -72,7 +72,7 @@ impl SyncConfig {
 }
 
 pub fn def_config_file() -> String {
-    let mut file = "mapping".to_string();
+    let mut file = "mapping".to_owned();
     if !IS_REL {
         file.push_str(".");
         file.push_str(BUILD_PREFIX);
@@ -117,7 +117,7 @@ fn pw_prompt() -> String {
     if password.char_indices().count() < 6 {
         panic!("Illegal password, len < 6");
     }
-    password.to_string()
+    password.to_owned()
 }
 
 // TODO: this function should just return a Result instead of panicking
@@ -165,7 +165,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             Some (s) => {
                 match s.as_str() {
                     None => panic!("{} must be a string", setting),
-                    Some(name) => Some(name.trim().to_string())
+                    Some(name) => Some(name.trim().to_owned())
                 }
             }
         }
@@ -200,7 +200,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                             None => panic!("The values in map nick list {} must be strings, like: [\"myhostname\"]", map_nick),
                             Some (lhn) => {
                                 if lhn == hn {
-                                    map_nicknames.insert(map_nick.to_string());
+                                    map_nicknames.insert(map_nick.to_owned());
                                 }
                             }
                         }
@@ -244,7 +244,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                 if !pp.is_dir() {
                     println!("Warning: sync directory does not exist: {}", sd);
                 }
-                sd.to_string()
+                sd.to_owned()
             }
         };
 
@@ -256,7 +256,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
                     match p.as_str() {
                         None => panic!("'NativePaths' must contain strings, found a non-string: {:?}", p),
                         Some(s) => {
-                            native_paths.push(s.to_string());
+                            native_paths.push(s.to_owned());
                         }
                     }
                 }

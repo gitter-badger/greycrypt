@@ -48,7 +48,7 @@ impl SyncFileCache {
     pub fn get(&mut self, conf: &config::SyncConfig, syncfile: &PathBuf) -> &syncfile::SyncFile {
         let pbs = match syncfile.to_str() {
             None => panic!("Failed to make string from pathbuf: {:?}", syncfile),
-            Some (pbs) => pbs.to_string()
+            Some (pbs) => pbs.to_owned()
         };
 
         if !self.map.contains_key(&pbs) {
@@ -182,7 +182,7 @@ fn update_native_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     let outfile = {
         if equal {
             info!("Native file matches local, updating syncdb: {:?}", sf.nativefile);
-            native_fname.to_str().unwrap().to_string()
+            native_fname.to_str().unwrap().to_owned()
         } else {
             // need to use a new SF here to unpack data,
             // because the one used for the equal check has
@@ -290,7 +290,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
 fn check_file_data_equal(state:&mut SyncState,syncfile:&PathBuf,nativefile:&PathBuf) -> Result<(bool,syncfile::SyncFile),String> {
     let mut sf_data:Vec<u8> = Vec::new();
-    let syncpath = syncfile.to_str().unwrap().to_string();
+    let syncpath = syncfile.to_str().unwrap().to_owned();
     let sf = load_syncfile_or_panic(state,&syncpath,&mut sf_data);
     // if file is text, syncfile decryption will have decanoned the lines, so we can compare them
     // directly with native line format.  so use binary read for both text and binary files.
@@ -532,7 +532,7 @@ pub fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
                 Ok(id) => id
             };
 
-            let pbs = pb.to_str().unwrap().to_string();
+            let pbs = pb.to_str().unwrap().to_owned();
             if files_for_id.contains_key(&file_syncid) {
                 files_for_id.get_mut(&file_syncid).unwrap().push(pbs);
             } else {
@@ -817,7 +817,7 @@ pub fn do_sync(state:&mut SyncState) {
         let mut native_files = HashSet::new();
         {
             let mut visitor = |pb: &PathBuf| {
-                let fname = pb.to_str().unwrap().to_string();
+                let fname = pb.to_str().unwrap().to_owned();
                 if !is_ignored(&fname) {
                     native_files.insert(fname);
                 }

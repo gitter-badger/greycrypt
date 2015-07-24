@@ -105,7 +105,7 @@ pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
 // since it can be overridden by the config file.
 pub fn get_hostname() -> String {
     let hostname = match env::var("GREYCRYPT_HOST") {
-        Err(_) => "".to_string(),
+        Err(_) => "".to_owned(),
         Ok(v) => v
     };
     
@@ -115,7 +115,7 @@ pub fn get_hostname() -> String {
             let output = Command::new("hostname")
                                  .output()
                                  .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
-            String::from_utf8(output.stdout).unwrap().trim().to_string()    
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()    
         } else {
             hostname
         };
@@ -124,7 +124,7 @@ pub fn get_hostname() -> String {
 }
 
 pub fn canon_path(p:&str) -> String {
-    let res = p.replace("\\","/").to_string();
+    let res = p.replace("\\","/").to_owned();
     res
 }
 
@@ -176,9 +176,9 @@ pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>,String> {
         // make sure line doesn't have any terminator residue
         let chars:Vec<char> = l.chars().collect();
 
-        let l = if l.ends_with("\r\n") { trim_end(&chars,2) } else { l.to_string() };
-        let l = if l.ends_with("\n") { trim_end(&chars,1) } else { l.to_string() };
-        let l = if l.ends_with("\r") { trim_end(&chars,1) } else { l.to_string() };
+        let l = if l.ends_with("\r\n") { trim_end(&chars,2) } else { l.to_owned() };
+        let l = if l.ends_with("\n") { trim_end(&chars,1) } else { l.to_owned() };
+        let l = if l.ends_with("\r") { trim_end(&chars,1) } else { l.to_owned() };
 
         match write!(out_buf, "{}\n",l) {
             Err(e) => return Err(format!("Failed to write line string to stream buffer: {}", e)),
@@ -196,20 +196,20 @@ pub fn string_lines_to_hashmap(lines:Vec<&str>) -> HashMap<String,String> {
         let parts:Vec<&str> = l.split(':').collect();
         let k = parts[0].trim();
         let v = parts[1].trim();
-        hm.insert(k.to_lowercase(),v.to_string());
+        hm.insert(k.to_lowercase(),v.to_owned());
     }
     hm
 }
 
 #[cfg(target_os = "windows")]
 fn fixpath(p:&str) -> String {
-    let res = p.replace("/","\\").to_string();
+    let res = p.replace("/","\\").to_owned();
     res
 }
 
 #[cfg(not(target_os = "windows"))]
 fn fixpath(p:&str) -> String {
-    p.to_string()
+    p.to_owned()
 }
 
 pub fn decanon_path(p:&str) -> String {
@@ -248,7 +248,7 @@ pub fn get_appdata_dir() -> Option<String> {
         Ok(v) => {
             let mut pb = PathBuf::from(&v);
             pb.push(".greycrypt");
-            Some(pb.to_str().unwrap().to_string())
+            Some(pb.to_str().unwrap().to_owned())
         }
     }
 }

@@ -65,7 +65,7 @@ impl SyncFile {
         let idstr = SyncFile::get_sync_id(kw,&relpath);
 
         let mut syncpath = PathBuf::from(&conf.sync_dir());
-        let prefix = &idstr.to_string()[0..2];
+        let prefix = &idstr.to_owned()[0..2];
         syncpath.push(prefix);
         syncpath.push(&idstr);
         syncpath.set_extension("dat");
@@ -79,7 +79,7 @@ impl SyncFile {
             keyword: self.keyword.clone(),
             relpath: self.relpath.clone(),
             revguid: uuid::Uuid::new_v4(),
-            nativefile: self.nativefile.to_string(),
+            nativefile: self.nativefile.to_owned(),
             is_binary: self.is_binary,
             is_deleted: true,
             sync_file_state: SyncFileState::Closed
@@ -104,10 +104,10 @@ impl SyncFile {
 
         let ret = SyncFile {
             id: idstr,
-            keyword: kw.to_string(),
+            keyword: kw.to_owned(),
             relpath: relpath,
             revguid: uuid::Uuid::new_v4(),
-            nativefile: nativefile.to_string(),
+            nativefile: nativefile.to_owned(),
             is_binary: is_binary,
             is_deleted: false,
             sync_file_state: SyncFileState::Closed
@@ -125,7 +125,7 @@ impl SyncFile {
             match reader.read_line(&mut line) {
                 Err(e) => return Err(format!("Failed to read header line {} from syncfile: {}", i, e)),
                 Ok(_) => {
-                    lines.push(line.trim().to_string());
+                    lines.push(line.trim().to_owned());
                 }
             }
         }
@@ -155,14 +155,14 @@ impl SyncFile {
         match SyncFile::read_top_lines(&fin,1) {
             Err(e) => return Err(e),
             Ok(lines) => {
-                Ok(lines[0].to_string())
+                Ok(lines[0].to_owned())
             }
         }
     }
 
     fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>),String> {
         let key = match conf.encryption_key {
-            None => return Err("No encryption key".to_string()),
+            None => return Err("No encryption key".to_owned()),
             Some(k) => k
         };
 
@@ -245,7 +245,7 @@ impl SyncFile {
                 let parts:Vec<&str> = l.split(':').collect();
                 let k = parts[0].trim();
                 let v = parts[1].trim();
-                mdmap.insert(k.to_lowercase(),v.to_string());
+                mdmap.insert(k.to_lowercase(),v.to_owned());
             }
             mdmap
         };
@@ -257,7 +257,7 @@ impl SyncFile {
             iv_copy[i] = iv[i]
         }
 
-        Ok((fin,syncid.to_string(),iv_copy,mdmap))
+        Ok((fin,syncid.to_owned(),iv_copy,mdmap))
     }
 
     pub fn get_metadata_hash(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<HashMap<String,String>,String> {
@@ -279,14 +279,14 @@ impl SyncFile {
             let v = mdmap.get("kw");
             match v {
                 None => return Err(format!("Key 'kw' is required in metadata")),
-                Some(v) => v.to_string()
+                Some(v) => v.to_owned()
             }
         };
         let relpath = {
             let v = mdmap.get("relpath");
             match v {
                 None => return Err(format!("Key 'relpath' is required in metadata")),
-                Some(v) => v.to_string()
+                Some(v) => v.to_owned()
             }
         };
         let revguid = {
@@ -344,7 +344,7 @@ impl SyncFile {
             keyword: keyword,
             relpath: relpath,
             revguid: revguid,
-            nativefile: "".to_string(),
+            nativefile: "".to_owned(),
             is_binary: is_binary,
             is_deleted: is_deleted,
             sync_file_state: SyncFileState::Open(ofs)
@@ -368,7 +368,7 @@ impl SyncFile {
                 // appears to do nothing...whatevs
                 let rp = &util::decanon_path(&self.relpath[1..]);
                 outpath.push(rp);
-                self.nativefile = outpath.to_str().unwrap().to_string();
+                self.nativefile = outpath.to_str().unwrap().to_owned();
                 Ok(())
             }
         }
@@ -405,11 +405,11 @@ impl SyncFile {
             let ofs = {
                 match self.sync_file_state {
                     SyncFileState::Open(ref ofs) => ofs,
-                    _ => return Err("Sync file not open".to_string())
+                    _ => return Err("Sync file not open".to_owned())
                 }
             };
             let key = match conf.encryption_key {
-                None => return Err("No encryption key".to_string()),
+                None => return Err("No encryption key".to_owned()),
                 Some(k) => k
             };
             // make crypto helper
@@ -497,13 +497,13 @@ impl SyncFile {
         { // check to make sure file is open, scoped to prevent borrow conflicts
             match self.sync_file_state {
                 SyncFileState::Open(ref ofs) => ofs,
-                _ => return Err("Sync file not open".to_string())
+                _ => return Err("Sync file not open".to_owned())
             };
         }
 
         let nativefile = self.nativefile.clone();
         let outpath = match nativefile.trim() {
-            "" => return Err("Native path not set, call set_nativefile_path()".to_string()),
+            "" => return Err("Native path not set, call set_nativefile_path()".to_owned()),
             s => s
         };
 
@@ -529,7 +529,7 @@ impl SyncFile {
             Ok(_) => ()
         }
 
-        Ok(outpath.to_string())
+        Ok(outpath.to_owned())
     }
 
     fn write_syncfile_header(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) ->
@@ -604,7 +604,7 @@ impl SyncFile {
             }
         }
 
-        Ok((outname.to_string(),fout,iv,key))
+        Ok((outname.to_owned(),fout,iv,key))
     }
 
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
@@ -680,7 +680,7 @@ impl SyncFile {
                 match l {
                     Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
                     Ok(l) => {
-                        out_lines.push(l.to_string());
+                        out_lines.push(l.to_owned());
                     }
                 }
             }
@@ -708,7 +708,7 @@ impl SyncFile {
             }
         }
 
-        Ok(outname.to_string())
+        Ok(outname.to_owned())
     }
 
     pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf, override_path: Option<PathBuf>) -> Result<(String,SyncFile),String> {
@@ -755,8 +755,8 @@ mod tests {
         let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig::new(
-            outpath.to_str().unwrap().to_string(),
-            "MacUnitTestHost".to_string(), // TODO: use win on windows
+            outpath.to_str().unwrap().to_owned(),
+            "MacUnitTestHost".to_owned(), // TODO: use win on windows
             mapping,
             Some(ec),
             None,
@@ -843,7 +843,7 @@ mod tests {
                 };
 
                 // slurp source and output files and compare
-                let srctext = util::slurp_text_file(&savetp.to_string());
+                let srctext = util::slurp_text_file(&savetp.to_owned());
                 let outtext = util::slurp_text_file(&outfile);
                 assert_eq!(srctext,outtext);
             }
@@ -913,7 +913,7 @@ mod tests {
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");
         testpath.push("test_native_file.txt");
-        let srctext = util::slurp_bin_file(&testpath.to_str().unwrap().to_string());
+        let srctext = util::slurp_bin_file(&testpath.to_str().unwrap().to_owned());
 
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");

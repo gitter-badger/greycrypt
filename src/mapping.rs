@@ -30,7 +30,7 @@ impl Mapping {
             let keyword = keyword.to_uppercase();
             // preserve case on dir in this map; it isn't an error if the dir doesn't exist,
             // since we may not have synced it yet.
-            ret.keyword_to_dir.insert(keyword.to_string(),dir.to_string());
+            ret.keyword_to_dir.insert(keyword.to_owned(),dir.to_owned());
 
             let dir = dir.to_uppercase();
             ret.dir_to_keyword.insert(dir,keyword);
@@ -77,7 +77,7 @@ impl Mapping {
                         }
                         Some (kw) => {
                             // find the relpath
-                            let relpath = &nativefile[ps.len()..].to_string();
+                            let relpath = &nativefile[ps.len()..].to_owned();
                             let relpath = util::canon_path(relpath);
                             // TODO: validate that kw, relpath have non-zero length
                             res = Some((kw,relpath));
@@ -100,12 +100,12 @@ mod tests {
         
     #[cfg(not(target_os = "macos"))]   
     fn unit_test_hostname() -> String {
-        "MacUnitTestHost".to_string()
+        "MacUnitTestHost".to_owned()
     }
     
     #[cfg(not(target_os = "windows"))]   
     fn unit_test_hostname() -> String {
-        "WinUnitTestHost".to_string()
+        "WinUnitTestHost".to_owned()
     }
     
     fn get_config() -> config::SyncConfig {
@@ -113,10 +113,10 @@ mod tests {
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
         syncpath.push("test_config.toml");
-        let config_file = syncpath.to_str().unwrap().to_string();
+        let config_file = syncpath.to_str().unwrap().to_owned();
         let config = config::parse(Some(config_file));
         config::SyncConfig::new(
-            config.sync_dir().to_string(),
+            config.sync_dir().to_owned(),
             unit_test_hostname(),
             config.mapping,
             config.encryption_key,

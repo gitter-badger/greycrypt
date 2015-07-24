@@ -25,7 +25,7 @@ impl LoggerUtil {
     pub fn warn_once(&mut self, message:&str) {
         if !self.warnonce_messages.contains(message) {
             warn!("{}", message);
-            self.warnonce_messages.insert(message.to_string());
+            self.warnonce_messages.insert(message.to_owned());
         }
     }   
 }

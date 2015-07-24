@@ -25,11 +25,11 @@ impl SyncDb {
         // if conf has a db dir, use that; otherwise, form it from the app data path
         let syncdb_dir = {
             match conf.syncdb_dir {
-                Some(ref dir) => PathBuf::from(&dir.to_string()),
+                Some(ref dir) => PathBuf::from(&dir.to_owned()),
                 None => {
                     let ad_dir = util::get_appdata_dir();
                     match ad_dir {
-                        None => return Err("No appdata dir available, can't initialize syncdb".to_string()),
+                        None => return Err("No appdata dir available, can't initialize syncdb".to_owned()),
                         Some(dir) => {
                             // append app name
                             let mut pb = PathBuf::from(&dir);
