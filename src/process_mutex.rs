@@ -88,7 +88,6 @@ pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
 		.replace(":", "_")
 		.replace(" ", "_");
 	let name = format!("greycrypt_mutex_{}", name);
-
-	println!("{}", name);
+	
 	create_mutex(&name)
 }
