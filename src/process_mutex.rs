@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "windows"))]
 use std::path::{PathBuf};
 
 #[cfg(not(target_os = "windows"))]
@@ -71,14 +72,47 @@ fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 	})
 }
 
+#[cfg(target_os = "windows")]
+use std::ptr;
+#[cfg(target_os = "windows")]
+use std::ffi::OsStr;
+#[cfg(target_os = "windows")]
+use std::os::windows::ffi::OsStrExt;
+#[cfg(target_os = "windows")]
+extern crate winapi;
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "stdcall" {
+    fn CreateMutexW(
+        lp_mutex_attributes: winapi::LPVOID, // actually its a struct pointer, but I always pass NULL, so with LPVOID I don't have to define the struct
+        b_initial_owner: winapi::BOOL,
+        lp_name: winapi::LPCWSTR) -> winapi::HANDLE;
+	fn GetLastError() -> winapi::DWORD;
+}
+
 #[derive(Debug)]
 #[cfg(target_os = "windows")]
-pub struct ProcessMutex;
+pub struct ProcessMutex {
+	handle: winapi::HANDLE
+}
 
 #[cfg(target_os = "windows")]
 fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
-	println!("Wish I knew how to create a process mutex on windows!");
-	Ok(ProcessMutex)
+    let name:Vec<u16> = OsStr::new(name).encode_wide().chain(Some(0)).collect::<Vec<_>>();
+
+    let (err,mutie) = unsafe {
+        let mutie = CreateMutexW(ptr::null_mut(), winapi::TRUE, name.as_ptr());
+		let err = GetLastError();
+		(err,mutie)
+    };
+    if mutie == ptr::null_mut() || err != 0 {
+        Err(format!("failed to create mutex, another greycrypt instance may be running.  Res: {:?}; Code: {:?}", mutie, err))
+    } else {
+		Ok(ProcessMutex {
+			handle: mutie
+		})
+	}
 }
 
 pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
@@ -88,6 +122,6 @@ pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
 		.replace(":", "_")
 		.replace(" ", "_");
 	let name = format!("greycrypt_mutex_{}", name);
-	
+
 	create_mutex(&name)
 }
