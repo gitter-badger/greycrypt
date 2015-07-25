@@ -22,6 +22,7 @@ mod core;
 mod commands;
 mod trash;
 mod logging;
+mod process_mutex;
 
 use std::thread;
 
@@ -66,6 +67,11 @@ fn main() {
     let syncdb = match syncdb::SyncDb::new(&conf) {
         Err(e) => panic!("Failed to create syncdb: {:?}", e),
         Ok(sdb) => sdb
+    };
+    
+    let mutex = match process_mutex::acquire(conf.sync_dir()) {
+        Err(e) => panic!("Failed to create process mutex: {}", e),
+        Ok(f) => f
     };
 
     let mut state = core::SyncState::new(conf,syncdb,log_util);
