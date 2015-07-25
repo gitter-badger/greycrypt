@@ -25,19 +25,19 @@ pub struct ProcessMutex {
 #[cfg(not(target_os = "windows"))]
 fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 	let path = format!("/tmp/{}", name);
-	
+
 	let pb = PathBuf::from(&path);
-	 
+
 	let cmf = || {
 		let flags = O_CREAT | O_WRONLY;
 		let res = open(&pb, flags, S_IWUSR);
-			
+
 		let fd = match res {
 			Err(e) => {
 				//println!("Failed to open");
 				return res;
 			}
-			Ok(fd) => fd 
+			Ok(fd) => fd
 		};
 
 		let fl = flock {
@@ -45,29 +45,29 @@ fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 			l_type: 3, // F_WRLCK
 			l_whence: 0, //SEEK_SET,
 			l_start: 0,
-			l_len: 0, 
+			l_len: 0,
 			l_pid: unistd::getpid(),
 			l_sysid: 0
 		};
-		
+
 		//println!("excl lock");
 		let res = fcntl(fd, F_SETLK(&fl));
 		match res {
 			Err(e) => res,
-			Ok(code) => Ok(fd) 
+			Ok(code) => Ok(fd)
 		}
 	};
 
 	let f = match cmf() {
 		Err(e) => {
-			let ne = format!("Failed to create/lock file '{}', another greycrypt instance may be running.  Code: {:?}", path, e); 
+			let ne = format!("Failed to create/lock file '{}', another greycrypt instance may be running.  Code: {:?}", path, e);
 			return Err(ne)
 		},
 		Ok(f) => f
 	};
-	
+
 	Ok(ProcessMutex {
-		handle: f 
+		handle: f
 	})
 }
 
@@ -78,6 +78,7 @@ pub struct ProcessMutex;
 #[cfg(target_os = "windows")]
 fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 	println!("Wish I knew how to create a process mutex on windows!");
+	Ok(ProcessMutex)
 }
 
 pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
@@ -87,7 +88,7 @@ pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
 		.replace(":", "_")
 		.replace(" ", "_");
 	let name = format!("greycrypt_mutex_{}", name);
-	
+
 	println!("{}", name);
 	create_mutex(&name)
 }
