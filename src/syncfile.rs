@@ -13,6 +13,7 @@ use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
 use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek};
+use std::io;
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
@@ -325,7 +326,7 @@ impl SyncFile {
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
         // TODO: there must be a better way. THE TRUTH IS OUT THERE.
-        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];
+        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];       
         for i in 0..IV_SIZE {
             iv_copy[i] = iv[i]
         }
@@ -371,30 +372,30 @@ impl SyncFile {
         }
     }
 
-    fn pack_metadata(&self, conf:&config::SyncConfig, v:&mut Vec<u8>) {
+    fn pack_metadata(&self, conf:&config::SyncConfig, v:&mut Vec<u8>) -> io::Result<()> {
         let md_format_ver = 1;
-        // TODO: let _ is janky
-        // TODO: no panic (return on err)
-        let _ = writeln!(v, "ver: {}", md_format_ver);
-        let _ = writeln!(v, "kw: {}", self.keyword);
-        let _ = writeln!(v, "relpath: {}", self.relpath);
-        let _ = writeln!(v, "revguid: {}", self.revguid);
-        let _ = writeln!(v, "is_binary: {}", self.is_binary);
-        let _ = writeln!(v, "is_deleted: {}", self.is_deleted);
+        try!(writeln!(v, "ver: {}", md_format_ver));
+        try!(writeln!(v, "kw: {}", self.keyword));
+        try!(writeln!(v, "relpath: {}", self.relpath));
+        try!(writeln!(v, "revguid: {}", self.revguid));
+        try!(writeln!(v, "is_binary: {}", self.is_binary));
+        try!(writeln!(v, "is_deleted: {}", self.is_deleted));
 
         // additional fields that aren't required for sync but are helpful for resolving conflicts
         let mtime = {
             if !self.is_deleted {
                 match util::get_file_mtime(&self.nativefile) {
-                    Err(e) => panic!("Failed to obtain mtime: {}",e),
+                    Err(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("Failed to obtain mtime: {}",e))),
                     Ok(mtime) => mtime
                 }
             } else {
                 0
             }
         };
-        let _ = writeln!(v, "origin_native_mtime: {}", mtime);
-        let _ = writeln!(v, "origin_host: {}", conf.host_name);
+        try!(writeln!(v, "origin_native_mtime: {}", mtime));
+        try!(writeln!(v, "origin_host: {}", conf.host_name));
+        
+        Ok(())
     }
 
     fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
@@ -584,7 +585,10 @@ impl SyncFile {
 
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
-        self.pack_metadata(conf, &mut v);
+        match self.pack_metadata(conf, &mut v) {
+            Err(e) => return Err(format!("Failed to write metadata: {}", e)),
+            Ok(_) => ()
+        }
 
         // pass true to signal EOF so that the metadata can be decrypted without needing to read
         // the whole file.
