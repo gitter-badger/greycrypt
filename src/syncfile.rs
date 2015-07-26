@@ -273,25 +273,22 @@ impl SyncFile {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
         };
-
+        
         // TODO: surely this unpacking code can be cut down in size alot
         let keyword:String = {
-            let v = mdmap.get("kw");
-            match v {
+            match mdmap.get("kw") {
                 None => return Err(format!("Key 'kw' is required in metadata")),
                 Some(v) => v.to_owned()
             }
         };
         let relpath = {
-            let v = mdmap.get("relpath");
-            match v {
+            match mdmap.get("relpath") {
                 None => return Err(format!("Key 'relpath' is required in metadata")),
                 Some(v) => v.to_owned()
             }
         };
         let revguid = {
-            let v = mdmap.get("revguid");
-            match v {
+            match mdmap.get("revguid") {
                 None => return Err(format!("Key 'revguid' is required in metadata")),
                 Some(v) => {
                     match uuid::Uuid::parse_str(v) {
@@ -607,6 +604,7 @@ impl SyncFile {
         Ok((outname.to_owned(),fout,iv,key))
     }
 
+    // TODO: should make this pure, return a new syncfile
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
         self.set_deleted();
         let (outname,_,_,_) = match self.write_syncfile_header(conf,override_path) {
