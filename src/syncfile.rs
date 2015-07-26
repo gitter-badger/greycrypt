@@ -736,36 +736,11 @@ mod tests {
     // use std::io::Write;
     use std::path::{PathBuf};
     use util;
-    use config;
     use mapping;
     use syncfile;
+    use testlib;
 
     extern crate toml;
-
-    fn get_config() -> config::SyncConfig {
-        let wd = env::current_dir().unwrap();
-
-        // generate a mock mapping, with keyword "gcprojroot" mapped to the project's root dir
-        let wds = wd.to_str().unwrap();
-        let mapping = format!("gcprojroot = '{}'", wds);
-        let mapping = toml::Parser::new(&mapping).parse().unwrap();
-        let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
-
-        let mut outpath = PathBuf::from(&wd);
-        outpath.push("testdata");
-        outpath.push("out_syncdir");
-
-        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
-
-        let conf = config::SyncConfig::new(
-            outpath.to_str().unwrap().to_owned(),
-            "MacUnitTestHost".to_owned(), // TODO: use win on windows
-            mapping,
-            Some(ec),
-            None,
-            Vec::new());
-        conf
-    }
 
     #[test]
     fn write_read_syncfile() {
@@ -776,7 +751,7 @@ mod tests {
 
         let savetp = testpath.to_str().unwrap();
 
-        let mut conf = get_config();
+        let mut conf = testlib::util::get_mock_config();
 
         let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath,None) {
             Err(e) => panic!("Error {:?}", e),
@@ -861,7 +836,7 @@ mod tests {
 
         let in_bytes = util::slurp_bin_file(testpath.to_str().unwrap());
 
-        let mut conf = get_config();
+        let mut conf = testlib::util::get_mock_config();
 
         let sfpath = match syncfile::SyncFile::create_syncfile(&conf,&testpath,None) {
             Err(e) => panic!("Error {:?}", e),
@@ -909,7 +884,7 @@ mod tests {
 
     #[test]
     fn decrypt_to_mem() {
-        let conf = get_config();
+        let conf = testlib::util::get_mock_config();
 
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
@@ -947,7 +922,7 @@ mod tests {
 
     #[test]
     fn deleted() {
-        let conf = get_config();
+        let conf = testlib::util::get_mock_config();
         let wd = env::current_dir().unwrap();
 
         let readit = |path| {

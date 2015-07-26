@@ -163,42 +163,13 @@ mod tests {
     use std::fs::remove_dir_all;
 
     use util;
-    use config;
     use syncdb;
-    use mapping;
     use syncfile;
-
-    fn get_config() -> config::SyncConfig {
-        let wd = env::current_dir().unwrap();
-
-        // empty mapping for this test
-        let mapping = "";
-        let mapping = toml::Parser::new(&mapping).parse().unwrap();
-        let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
-
-        let mut outpath = PathBuf::from(&wd);
-        outpath.push("testdata");
-        outpath.push("syncdir");
-
-        let mut syncdb_dir = PathBuf::from(&wd);
-        syncdb_dir.push("testdata");
-        syncdb_dir.push("out_syncdb");
-
-        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
-
-        let conf = config::SyncConfig::new(
-            outpath.to_str().unwrap().to_owned(),
-            "MacUnitTestHost".to_owned(), // TODO: use win on windows
-            mapping,
-            Some(ec),
-            Some(syncdb_dir.to_str().unwrap().to_owned()),
-            Vec::new());
-        conf
-    }
-
+    use testlib;
+    
     #[test]
     fn store() {
-        let conf = get_config();
+        let conf = testlib::util::get_mock_config();
 
         {
             // if the previous test sync db exists, clear it out

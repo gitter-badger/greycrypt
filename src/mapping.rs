@@ -95,36 +95,8 @@ impl Mapping {
 #[cfg(test)]
 mod tests {
     use config;
-    use std::env;
-    use std::path::{PathBuf};
-        
-    #[cfg(not(target_os = "macos"))]   
-    fn unit_test_hostname() -> String {
-        "MacUnitTestHost".to_owned()
-    }
-    
-    #[cfg(not(target_os = "windows"))]   
-    fn unit_test_hostname() -> String {
-        "WinUnitTestHost".to_owned()
-    }
-    
-    fn get_config() -> config::SyncConfig {
-        let wd = env::current_dir().unwrap();
-        let mut syncpath = PathBuf::from(&wd);
-        syncpath.push("testdata");
-        syncpath.push("test_config.toml");
-        let config_file = syncpath.to_str().unwrap().to_owned();
-        let config = config::parse(Some(config_file));
-        config::SyncConfig::new(
-            config.sync_dir().to_owned(),
-            unit_test_hostname(),
-            config.mapping,
-            config.encryption_key,
-            config.syncdb_dir,
-            config.native_paths
-        )
-    }
-    
+    use testlib;
+              
     fn test_kw_to_dir(config:&config::SyncConfig, kw: &str, expected: &str) {
         let expect = format!("No {} key", kw);
         assert_eq!(config.mapping.keyword_to_dir.get(kw).expect(&expect), expected);
@@ -137,7 +109,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn parse_mapping() {
-        let config = get_config();
+        let config = testlib::util::get_test_config();
         
         assert_eq!(config.mapping.dir_to_keyword.len(), 1);
         assert_eq!(config.mapping.keyword_to_dir.len(), 1);
@@ -167,7 +139,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn get_kw_relpath() {
-        let config = get_config();
+        let config = testlib::util::get_test_config();
         test_kw_relpath(&config, "/Users/john/Documents/GreyCryptTestSrc/Another file.txt", "HOME", "/Documents/GreyCryptTestSrc/Another file.txt");
 
         let res = config.mapping.get_kw_relpath("/Users/Fred/Documents/GreyCryptTestSrc/Another file.txt");

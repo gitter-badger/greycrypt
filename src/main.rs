@@ -24,6 +24,9 @@ mod trash;
 mod logging;
 mod process_mutex;
 
+#[cfg(test)]
+mod testlib;
+
 use std::thread;
 
 extern crate getopts;
