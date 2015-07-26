@@ -24,7 +24,6 @@ const IV_SIZE: usize = 16;
 
 struct OpenFileState {
     handle: File,
-    //iv: &'a [u8]
     iv: [u8;IV_SIZE]
 }
 enum SyncFileState {
@@ -636,6 +635,8 @@ impl SyncFile {
 
         if self.is_binary {
             // stream-encrypt binary files
+            
+            // use vec to heap alloc the buffer
             const SIZE: usize = 1048576;
             let mut v: Vec<u8> = vec![0;SIZE];
             let mut buf = &mut v;
@@ -671,7 +672,7 @@ impl SyncFile {
                 }
             }
         } else {
-            // for text files, read them in and normalized the line endings (use \r), so that
+            // for text files, read them in and normalized the line endings (use \n), so that
             // the (decrypted) binary value is same on all platforms.  this is required for de-dup
             // comparisons.  when unpacking to native on a target platform, we'll restore the
             // proper line endings
