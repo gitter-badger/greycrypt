@@ -435,14 +435,7 @@ impl SyncFile {
                             Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                             Ok(d) => {
                                 let dlen = d.len();
-                                match out.write(&d) {
-                                    Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
-                                    Ok(nbytes) => {
-                                        if nbytes != dlen {
-                                            return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
-                                        }
-                                    }
-                                }
+                                try!(out.write_all(&d))
                             }
                         }
                         if eof {
@@ -482,7 +475,7 @@ impl SyncFile {
                     match util::decanon_lines(&temp_out) {
                         Err(e) => return make_err(&format!("Decanon error: {}", e)),
                         Ok(temp_out) => {
-                            try!(out.write(&temp_out)); 
+                            try!(out.write_all(&temp_out)); 
                         }
                     }
 
@@ -656,14 +649,7 @@ impl SyncFile {
                             Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                             Ok(d) => {
                                 let dlen = d.len();
-                                match fout.write(&d) {
-                                    Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
-                                    Ok(nbytes) => {
-                                        if nbytes != dlen {
-                                            return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
-                                        }
-                                    }
-                                }
+                                try!(fout.write_all(&d))
                             }
                         }
                         //println!("encrypted {} bytes",num_read);
@@ -701,14 +687,7 @@ impl SyncFile {
                 Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                 Ok(d) => {
                     let dlen = d.len();
-                    match fout.write(&d) {
-                        Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
-                        Ok(nbytes) => {
-                            if nbytes != dlen {
-                                return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
-                            }
-                        }
-                    }
+                    try!(fout.write_all(&d))
                 }
             }
         }
@@ -913,7 +892,7 @@ mod tests {
                 // uncomment to see what the data looks like in case this fails
                 // match File::create("testdata/temp.out") {
                 //     Err(e) => panic!("Error {:?}", e),
-                //     Ok(ref mut f) => { f.write(&data); () }
+                //     Ok(ref mut f) => { f.write_all(&data); () }
                 // }
                 assert_eq!(srctext,data);
 
