@@ -1,28 +1,49 @@
 [General]
-# the absolute path prefix on these paths doesn't matter; as long
-# as there is a mapping for each path on this machine, it will work.
-# TODO: actually it doesn't quite work like this, paths have to be specified
-# explicitly
-NativePaths = [
-  #"C:\\Steam\\ThisShouldCauseAnUnmappedWarning",
-  #"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Nothere.txt",
-  "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt",
-  "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
-  "C:\\Users\\John\\Documents\\AnotherGreyGryptTestDir",
-  "/Users/john/Documents/AnotherGreyGryptTestDir",
-  "/Users/john/Documents/GreyCryptTestSrc"
-  ]
+# Password can be specified here for debug builds; but not release; that will always prompt
+#Password = "p@ssword"
 
+# This allows you to change the hostname to something other than the detected value, but shouldn't be needed
+# for normal use.
+#HostnameOverride = "Whatever"
+
+# Each machine host name maps to a host nickname, and each nick has a definition object that defines the paths for it.
+# Here, two hostnames are mapped to the "mac" nickname (my mac seemingly randomly picks one or the other), and 
+# two windows machines are mapped to "winreg".  The hostnames must match the output of the "hostname" command on 
+# each machine.  Nicknames should not contain characters like "." as that will confuse the TOML parser.
+# The hostnames must be specified in list format (["foo" ...]) even if there is just one. 
 [Mapping]
-mac = ["johns-mbp.home", "Johns-MacBook-Pro.local"] # mac likes to switch out its name sometimes; think its based on network config, whatever
+mac = ["johns-mbp.home", "Johns-MacBook-Pro.local"] 
 winreg = ["Descendent", "John-WinLaptop"]
 
-[HostDef-mac]
-SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
-home = "/Users/john"
+# Each host def should contain at a minimum, the sync directory, a list of local (native) paths that should
+# be synced, and a keyword->directory mapping.  In this windows config, I am syncing from/to two local
+# directories, both of which will be mapped to the "home" keyword because they begin with that prefix.
+# The this keyword->dir mapping tells greycrypt where to unpack the files on other machines.  On my mac
+# I have chosen to unpack them to my mac home directory, but I could have remapped "home" to anywhere 
+# in that definition.  
+# For example, here is how a file on windows will be mapped to the mac:
+# C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Foo.txt -> "/Users/john/Documents/AnotherGreyCryptTestDir/Foo.txt"
 
+# \\ is required for windows paths.
+
+# There can be more than one kw->dir specified, but the keywords must not conflict with "proper" configuration
+# keys (i.e. don't use "SyncDir" as a keyword).  It is recommended to use lowercase for keywords to help differentiate
+# them; the code is case insensitive (home == HOME).
 [HostDef-winreg]
 SyncDir = "C:\\Users\\John\\Google Drive\\Sync\\GreyCrypt"
+NativePaths = [
+  "C:\\Users\\John\\Documents\\GreyCryptTestSrc",
+  "C:\\Users\\John\\Documents\\AnotherGreyCryptTestDir",
+]
 home = "C:\\Users\\John"
 
-
+# Same as above, except with mac-style paths.  Here I have also chosen to not sync GreyCryptTestSrc; that
+# means the mac will ignore that path and any files therein.  This means that although sync files
+# may exist for the path in the SyncDir, they won't be unpacked and replicated locally.
+[HostDef-mac]
+SyncDir = "/Users/john/Google Drive/Sync/GreyCrypt"
+NativePaths = [
+  "/Users/john/Documents/AnotherGreyCryptTestDir",
+#  "/Users/john/Documents/GreyCryptTestSrc",
+  ]
+home = "/Users/john"
