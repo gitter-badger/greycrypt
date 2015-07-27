@@ -12,8 +12,9 @@ use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
-use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek};
+use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek,Result};
 use std::io;
+
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
 
@@ -41,6 +42,10 @@ pub struct SyncFile {
     sync_file_state: SyncFileState
 }
 
+fn make_err<T> (m:&str) -> Result<T> {
+    Err(io::Error::new(io::ErrorKind::Other, m))
+}
+
 impl SyncFile {
     pub fn get_sync_id(kw: &str, relpath: &str) -> String {
         // make id from hash of kw + relpath
@@ -54,11 +59,11 @@ impl SyncFile {
     // particular is a "default" setting, in a real sync scenario, it may be renamed based
     // on network sync state.  This is handled by the option parameter to create_syncfile()
     // below.
-    pub fn get_sync_id_and_path(conf:&config::SyncConfig, nativefile: &str) -> Result<(String,PathBuf),String> {
+    pub fn get_sync_id_and_path(conf:&config::SyncConfig, nativefile: &str) -> Result<(String,PathBuf)> {
         let (kw,relpath) = {
             let res = conf.mapping.get_kw_relpath(nativefile);
             match res {
-                None => return Err(format!("No mapping found for native file: {}", nativefile)),
+                None => return make_err(&format!("No mapping found for native file: {}", nativefile)),
                 Some((kw,relpath)) => (kw,relpath)
             }
         };
@@ -86,11 +91,11 @@ impl SyncFile {
         };
     }
 
-    pub fn from_native(conf:&config::SyncConfig, nativefile: &str) -> Result<SyncFile,String> {
+    pub fn from_native(conf:&config::SyncConfig, nativefile: &str) -> Result<SyncFile> {
         let (kw,relpath) = {
             let res = conf.mapping.get_kw_relpath(nativefile);
             match res {
-                None => return Err(format!("No mapping found for native file: {}", nativefile)),
+                None => return make_err(&format!("No mapping found for native file: {}", nativefile)),
                 Some((kw,relpath)) => (kw,relpath)
             }
         };
@@ -98,7 +103,7 @@ impl SyncFile {
         let idstr = SyncFile::get_sync_id(kw,&relpath);
 
         let is_binary = match util::file_is_binary(nativefile) {
-            Err(e) => return Err(format!("Failed to check binary status: {:?}", e)),
+            Err(e) => return make_err(&format!("Failed to check binary status: {:?}", e)),
             Ok(isb) => isb
         };
 
@@ -116,14 +121,14 @@ impl SyncFile {
         Ok(ret)
     }
 
-    fn read_top_lines(fin:&File,count:i32) -> Result<Vec<String>,String> {
+    fn read_top_lines(fin:&File,count:i32) -> Result<Vec<String>> {
         let mut reader = BufReader::new(fin);
 
         let mut lines:Vec<String> = Vec::new();
         for i in 0 .. count {
             let mut line = String::new();
             match reader.read_line(&mut line) {
-                Err(e) => return Err(format!("Failed to read header line {} from syncfile: {}", i, e)),
+                Err(e) => return make_err(&format!("Failed to read header line {} from syncfile: {}", i, e)),
                 Ok(_) => {
                     lines.push(line.trim().to_owned());
                 }
@@ -137,19 +142,19 @@ impl SyncFile {
         // https://github.com/rust-lang/rust/blob/9cc0b2247509d61d6a246a5c5ad67f84b9a2d8b6/src/libstd/io/buffered.rs#L305
         let res = reader.seek(SeekFrom::Current(0));
         match res {
-            Err(e) => return Err(format!("Failed to seek reader after metadata: {:?}", e)),
+            Err(e) => return make_err(&format!("Failed to seek reader after metadata: {:?}", e)),
             Ok(_) => ()
         }
 
         Ok(lines)
     }
 
-    pub fn get_syncid_from_file(syncpath:&PathBuf) -> Result<String,String> {
+    pub fn get_syncid_from_file(syncpath:&PathBuf) -> Result<String> {
         if !syncpath.is_file() {
-            return Err(format!("Syncfile does not exist: {:?}", syncpath));
+            return make_err(&format!("Syncfile does not exist: {:?}", syncpath));
         }
         let fin = match File::open(syncpath.to_str().unwrap()) {
-            Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
+            Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
         match SyncFile::read_top_lines(&fin,1) {
@@ -160,14 +165,14 @@ impl SyncFile {
         }
     }
 
-    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>),String> {
+    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>)> {
         let key = match conf.encryption_key {
-            None => return Err("No encryption key".to_owned()),
+            None => return make_err(&"No encryption key".to_owned()),
             Some(k) => k
         };
 
         if !syncpath.is_file() {
-            return Err(format!("Syncfile does not exist: {:?}", syncpath));
+            return make_err(&format!("Syncfile does not exist: {:?}", syncpath));
         }
 
         // read first n lines:
@@ -180,7 +185,7 @@ impl SyncFile {
         // leave file handle open for later decryption of content data
 
         let fin = match File::open(syncpath.to_str().unwrap()) {
-            Err(e) => return Err(format!("Can't open syncfile: {:?}: {}", syncpath, e)),
+            Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
 
@@ -191,7 +196,7 @@ impl SyncFile {
                     // if any are empty, its an error
                     for l in &lines {
                         if l.trim() == "" {
-                            return Err(format!("Found empty line in syncfile, file is invalid: {:?}; may need to be removed", syncpath))
+                            return make_err(&format!("Found empty line in syncfile, file is invalid: {:?}; may need to be removed", syncpath))
                         }
                     }
                     (lines[0].clone(), lines[1].clone(), lines[2].clone())
@@ -200,11 +205,11 @@ impl SyncFile {
         };
 
         let iv = match ivline.from_base64() {
-            Err(e) => return Err(format!("Unable to parse IV line: {}", e)),
+            Err(e) => return make_err(&format!("Unable to parse IV line: {}", e)),
             Ok(iv) => iv
         };
         if iv.len() != IV_SIZE {
-            return Err(format!("Unexpected IV length: {}", iv.len()));
+            return make_err(&format!("Unexpected IV length: {}", iv.len()));
         }
 
         // make crypto helper
@@ -214,12 +219,12 @@ impl SyncFile {
 
         let md = mdline.from_base64();
         let md = match md {
-            Err(e) => return Err(format!("Failed to unpack metadata: error {:?}, line: {:?}", e, md)),
+            Err(e) => return make_err(&format!("Failed to unpack metadata: error {:?}, line: {:?}", e, md)),
             Ok(md) => md
         };
 
         let md = match crypto.decrypt(&md,true) {
-            Err(e) => return Err(format!("Failed to decrypt meta data: {:?}; are you using the correct password?", e)),
+            Err(e) => return make_err(&format!("Failed to decrypt meta data: {:?}; are you using the correct password?", e)),
             Ok(md) => md
         };
         let md = String::from_utf8(md).unwrap();
@@ -230,10 +235,10 @@ impl SyncFile {
             let verline = md[0];
             let verparts:Vec<&str> = verline.split(":").collect();
             if verparts[0].trim() != "ver" {
-                return Err(format!("expected first line of metadata to be file version, got: {:?}", verparts[0]));
+                return make_err(&format!("expected first line of metadata to be file version, got: {:?}", verparts[0]));
             }
             if verparts[1].trim() != "1" { // lame
-                return Err(format!("unexpected file version, got: {:?}", verline));
+                return make_err(&format!("unexpected file version, got: {:?}", verline));
             }
         }
 
@@ -260,7 +265,7 @@ impl SyncFile {
         Ok((fin,syncid.to_owned(),iv_copy,mdmap))
     }
 
-    pub fn get_metadata_hash(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<HashMap<String,String>,String> {
+    pub fn get_metadata_hash(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<HashMap<String,String>> {
         let (_,_,_,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
@@ -268,7 +273,7 @@ impl SyncFile {
         Ok(mdmap)
     }
 
-    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile,String> {
+    pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile> {
         let (fin,_,iv,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
@@ -277,22 +282,22 @@ impl SyncFile {
         // TODO: surely this unpacking code can be cut down in size alot
         let keyword:String = {
             match mdmap.get("kw") {
-                None => return Err(format!("Key 'kw' is required in metadata")),
+                None => return make_err(&format!("Key 'kw' is required in metadata")),
                 Some(v) => v.to_owned()
             }
         };
         let relpath = {
             match mdmap.get("relpath") {
-                None => return Err(format!("Key 'relpath' is required in metadata")),
+                None => return make_err(&format!("Key 'relpath' is required in metadata")),
                 Some(v) => v.to_owned()
             }
         };
         let revguid = {
             match mdmap.get("revguid") {
-                None => return Err(format!("Key 'revguid' is required in metadata")),
+                None => return make_err(&format!("Key 'revguid' is required in metadata")),
                 Some(v) => {
                     match uuid::Uuid::parse_str(v) {
-                        Err(e) => return Err(format!("Failed to parse uuid: {}: {:?}", v, e)),
+                        Err(e) => return make_err(&format!("Failed to parse uuid: {}: {:?}", v, e)),
                         Ok(u) => u
                     }
                 }
@@ -300,10 +305,10 @@ impl SyncFile {
         };
         let is_binary = {
             match mdmap.get("is_binary") {
-                None => return Err(format!("Key 'is_binary' is required in metadata")),
+                None => return make_err(&format!("Key 'is_binary' is required in metadata")),
                 Some(v) => {
                     match bool::from_str(v) {
-                        Err(e) => return Err(format!("Failed to parse is_binary bool: {}", e)),
+                        Err(e) => return make_err(&format!("Failed to parse is_binary bool: {}", e)),
                         Ok(b) => b
                     }
                 }
@@ -315,7 +320,7 @@ impl SyncFile {
                 None => false,
                 Some(v) => {
                     match bool::from_str(v) {
-                        Err(e) => return Err(format!("Failed to parse is_deleted bool: {}", e)),
+                        Err(e) => return make_err(&format!("Failed to parse is_deleted bool: {}", e)),
                         Ok(b) => b
                     }
                 }
@@ -354,11 +359,11 @@ impl SyncFile {
         Ok(sf)
     }
 
-    fn set_nativefile_path(&mut self, conf:&config::SyncConfig) -> Result<(),String> {
+    fn set_nativefile_path(&mut self, conf:&config::SyncConfig) -> Result<()> {
         // use the keyword to find the base path in the mapping, then join with the relpath
         let res = conf.mapping.lookup_dir(&self.keyword);
         match res {
-            None => Err(format!("Keyword {} not found in mapping", &self.keyword)),
+            None => make_err(&format!("Keyword {} not found in mapping", &self.keyword)),
             Some(dir) => {
                 let mut outpath = PathBuf::from(&dir);
                 // pathbuf will mess up unless we chop leading path sep, and join ()
@@ -397,16 +402,16 @@ impl SyncFile {
         Ok(())
     }
 
-    fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
+    fn decrypt_helper(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<()> {
         {
             let ofs = {
                 match self.sync_file_state {
                     SyncFileState::Open(ref ofs) => ofs,
-                    _ => return Err("Sync file not open".to_owned())
+                    _ => return make_err(&"Sync file not open".to_owned())
                 }
             };
             let key = match conf.encryption_key {
-                None => return Err("No encryption key".to_owned()),
+                None => return make_err(&"No encryption key".to_owned()),
                 Some(k) => k
             };
             // make crypto helper
@@ -421,20 +426,20 @@ impl SyncFile {
             loop {
                 let read_res = fin.read(&mut buf);
                 match read_res {
-                    Err(e) => { return Err(format!("Read error: {}", e)) },
+                    Err(e) => { return make_err(&format!("Read error: {}", e)) },
                     Ok(num_read) => {
                         let enc_bytes = &buf[0 .. num_read];
                         let eof = num_read == 0;
                         let res = crypto.decrypt(enc_bytes, eof);
                         match res {
-                            Err(e) => return Err(format!("Encryption error: {:?}", e)),
+                            Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                             Ok(d) => {
                                 let dlen = d.len();
                                 match out.write(&d) {
-                                    Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                                    Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
                                     Ok(nbytes) => {
                                         if nbytes != dlen {
-                                            return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                            return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
                                         }
                                     }
                                 }
@@ -442,7 +447,7 @@ impl SyncFile {
                         }
                         if eof {
                             match out.flush() {
-                                Err(e) => return Err(format!("Failed to flush output reader: {}",e)),
+                                Err(e) => return make_err(&format!("Failed to flush output reader: {}",e)),
                                 Ok(_) => ()
                             }
                             break;
@@ -462,7 +467,7 @@ impl SyncFile {
         self.sync_file_state = SyncFileState::Closed;
     }
 
-    pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<(),String> {
+    pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<()> {
         // if file is binary, can go directly to target_out.  otherwise, have to
         // stream to intermediate buffer and nativize the line endings.
 
@@ -475,12 +480,9 @@ impl SyncFile {
                 Ok(_) => {
                     //println!("dec: {:?}", String::from_utf8(temp_out.clone()).unwrap());
                     match util::decanon_lines(&temp_out) {
-                        Err(e) => return Err(e),
+                        Err(e) => return make_err(&format!("Decanon error: {}", e)),
                         Ok(temp_out) => {
-                            match out.write(&temp_out) {
-                                Err(e) => return Err(format!("{:?}",e)),
-                                Ok(_) => ()
-                            }
+                            try!(out.write(&temp_out)); 
                         }
                     }
 
@@ -490,17 +492,17 @@ impl SyncFile {
         }
     }
 
-    pub fn restore_native(&mut self, conf:&config::SyncConfig) -> Result<String,String> {
+    pub fn restore_native(&mut self, conf:&config::SyncConfig) -> Result<String> {
         { // check to make sure file is open, scoped to prevent borrow conflicts
             match self.sync_file_state {
                 SyncFileState::Open(ref ofs) => ofs,
-                _ => return Err("Sync file not open".to_owned())
+                _ => return make_err(&"Sync file not open".to_owned())
             };
         }
 
         let nativefile = self.nativefile.clone();
         let outpath = match nativefile.trim() {
-            "" => return Err("Native path not set, call set_nativefile_path()".to_owned()),
+            "" => return make_err(&"Native path not set, call set_nativefile_path()".to_owned()),
             s => s
         };
 
@@ -509,7 +511,7 @@ impl SyncFile {
         if !outpath_par.is_dir() {
             let res = create_dir_all(&outpath_par);
             match res {
-                Err(e) => return Err(format!("Failed to create output directory: {:?}: {:?}", outpath_par, e)),
+                Err(e) => return make_err(&format!("Failed to create output directory: {:?}: {:?}", outpath_par, e)),
                 Ok(_) => ()
             }
         }
@@ -517,12 +519,12 @@ impl SyncFile {
         // prep output handles
         let res = File::create(outpath);
         let mut fout = match res {
-            Err(e) => return Err(format!("Failed to create output file: {:?}: {:?}", outpath, e)),
+            Err(e) => return make_err(&format!("Failed to create output file: {:?}: {:?}", outpath, e)),
             Ok(f) => f
         };
 
         match self.decrypt_to_writer(conf,&mut fout) {
-            Err(e) => return Err(format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
+            Err(e) => return make_err(&format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
             Ok(_) => ()
         }
 
@@ -531,9 +533,9 @@ impl SyncFile {
 
     fn write_syncfile_header(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) ->
     // Ret (outpath,outhandle,iv,key)
-    Result<(String,File,[u8;IV_SIZE],[u8;config::KEY_SIZE]),String> {
+    Result<(String,File,[u8;IV_SIZE],[u8;config::KEY_SIZE])> {
         let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
-            Err(e) => return Err(format!("Can't get id/path: {:?}", e)),
+            Err(e) => return make_err(&format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
         };
 
@@ -546,19 +548,19 @@ impl SyncFile {
         if !outpath_par.is_dir() {
             let res = create_dir_all(&outpath_par);
             match res {
-                Err(e) => return Err(format!("Failed to create output sync directory: {:?}: {:?}", outpath_par, e)),
+                Err(e) => return make_err(&format!("Failed to create output sync directory: {:?}: {:?}", outpath_par, e)),
                 Ok(_) => ()
             }
         }
 
         let outname = outpath.to_str().unwrap();
         let mut fout = match File::create(outname) {
-            Err(e) => return Err(format!("Can't create output file: {:?}", e)),
+            Err(e) => return make_err(&format!("Can't create output file: {:?}", e)),
             Ok(f) => f
         };
 
         let key = match conf.encryption_key {
-            None => return Err(format!("No encryption key")),
+            None => return make_err(&format!("No encryption key")),
             Some(k) => k
         };
 
@@ -572,20 +574,20 @@ impl SyncFile {
 
         // write sync id to file (unencrypted)
         match writeln!(fout, "{}", sid) {
-            Err(e) => return Err(format!("Failed to write sid: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write sid: {}", e)),
             Ok(_) => ()
         }
 
         // write iv to file (unencrypted, base64 encoded)
         match writeln!(fout, "{}", iv.to_base64(STANDARD)) {
-            Err(e) => return Err(format!("Failed to write iv: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write iv: {}", e)),
             Ok(_) => ()
         }
 
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
         match self.pack_metadata(conf, &mut v) {
-            Err(e) => return Err(format!("Failed to write metadata: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write metadata: {}", e)),
             Ok(_) => ()
         }
 
@@ -594,11 +596,11 @@ impl SyncFile {
         let res = crypto.encrypt(&v[..], true);
 
         match res {
-            Err(e) => return Err(format!("Encryption error: {:?}", e)),
+            Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
             Ok(d) => {
                 let b64_out = d[..].to_base64(STANDARD);
                 match writeln!(fout, "{}", b64_out) {
-                    Err(e) => return Err(format!("Failed to write metadata: {}", e)),
+                    Err(e) => return make_err(&format!("Failed to write metadata: {}", e)),
                     Ok(_) => ()
                 }
             }
@@ -608,18 +610,18 @@ impl SyncFile {
     }
 
     // TODO: should make this pure, return a new syncfile
-    pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
+    pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
         self.set_deleted();
         let (outname,_,_,_) = match self.write_syncfile_header(conf,override_path) {
-            Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
         };
         Ok(outname)
     }
 
-    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String,String> {
+    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
         let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
-            Err(e) => return Err(format!("Failed to write syncfile header: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
         };
         let mut fout = fout;
@@ -629,7 +631,7 @@ impl SyncFile {
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(&self.nativefile) {
-            Err(e) => { return Err(format!("Can't open input native file: {}: {}", &self.nativefile, e)) },
+            Err(e) => { return make_err(&format!("Can't open input native file: {}: {}", &self.nativefile, e)) },
             Ok(fin) => fin
         };
 
@@ -644,21 +646,21 @@ impl SyncFile {
             loop {
                 let read_res = fin.read(buf);
                 match read_res {
-                    Err(e) => { return Err(format!("Read error: {}", e)) },
+                    Err(e) => { return make_err(&format!("Read error: {}", e)) },
                     Ok(num_read) => {
                         //println!("read {} bytes",num_read);
                         let enc_bytes = &buf[0 .. num_read];
                         let eof = num_read == 0;
                         let res = crypto.encrypt(enc_bytes, eof);
                         match res {
-                            Err(e) => return Err(format!("Encryption error: {:?}", e)),
+                            Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                             Ok(d) => {
                                 let dlen = d.len();
                                 match fout.write(&d) {
-                                    Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                                    Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
                                     Ok(nbytes) => {
                                         if nbytes != dlen {
-                                            return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                            return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
                                         }
                                     }
                                 }
@@ -681,7 +683,7 @@ impl SyncFile {
             let mut out_lines:Vec<String> = Vec::new();
             for l in in_lines {
                 match l {
-                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                    Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
                     Ok(l) => {
                         out_lines.push(l.to_owned());
                     }
@@ -689,21 +691,21 @@ impl SyncFile {
             }
 
             let line_buf = match util::canon_lines(&out_lines) {
-                Err(e) => return Err(format!("{}", e)),
+                Err(e) => return make_err(&format!("{}", e)),
                 Ok(buf) => buf
             };
 
             let enc_bytes = &line_buf[0 .. line_buf.len()];
 
             match crypto.encrypt(enc_bytes, true) {
-                Err(e) => return Err(format!("Encryption error: {:?}", e)),
+                Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
                 Ok(d) => {
                     let dlen = d.len();
                     match fout.write(&d) {
-                        Err(e) => return Err(format!("Failed to write to file: {}", e)),
+                        Err(e) => return make_err(&format!("Failed to write to file: {}", e)),
                         Ok(nbytes) => {
                             if nbytes != dlen {
-                                return Err(format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
+                                return make_err(&format!("Failed to write expected bytes: wrote {}, want {}", nbytes, dlen));
                             }
                         }
                     }
@@ -714,16 +716,16 @@ impl SyncFile {
         Ok(outname.to_owned())
     }
 
-    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf, override_path: Option<PathBuf>) -> Result<(String,SyncFile),String> {
+    pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf, override_path: Option<PathBuf>) -> Result<(String,SyncFile)> {
         let res = SyncFile::from_native(&conf, nativepath.to_str().unwrap());
         let sf = match res {
-            Err(e) => return Err(format!("Failed to create sync file: {:?}", e)),
+            Err(e) => return make_err(&format!("Failed to create sync file: {:?}", e)),
             Ok(sf) => sf
         };
 
         let res = sf.read_native_and_save(&conf, override_path);
         match res {
-            Err(e) => return Err(format!("Failed to update sync file with native data: {:?}", e)),
+            Err(e) => return make_err(&format!("Failed to update sync file with native data: {:?}", e)),
             Ok(sfpath) => Ok((sfpath,sf))
         }
     }
