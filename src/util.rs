@@ -10,13 +10,17 @@ use std::os::unix::fs::MetadataExt;
 
 use std::env;
 use std::fs::File;
-use std::io::{Read, BufReader, Write, BufRead};
+use std::io::{Read, BufReader, Write, BufRead,Result};
 
 use std::fs::{metadata};
 #[cfg(target_os = "windows")]
 use std::os::windows::fs::MetadataExt;
 
 extern crate toml;
+
+pub fn make_err<T> (m:&str) -> Result<T> {
+    Err(io::Error::new(io::ErrorKind::Other, m))
+}
 
 // From: https://doc.rust-lang.org/stable/std/fs/fn.read_dir.html
 // walk_dir unstable, avoiding it for now
@@ -35,7 +39,7 @@ pub fn visit_dirs(dir: &Path, file_cb: &mut FnMut(&PathBuf)) -> io::Result<()> {
 }
 
 fn slurp_file<T,F>(fname:&str, slurper_fn: F ) -> T
-    where F: Fn(File) -> Result<T,String> {
+    where F: Fn(File) -> Result<T> {
     let f = File::open(fname);
     match f {
         Err(e) => { panic!("Can't open file: {}: {}", fname, e) } ,
@@ -50,13 +54,13 @@ fn slurp_file<T,F>(fname:&str, slurper_fn: F ) -> T
 }
 
 pub fn slurp_bin_file(fname:&str) -> Vec<u8> {
-    fn slurper (file:File) -> Result<Vec<u8>,String> {
+    fn slurper (file:File) -> Result<Vec<u8>> {
         // avoid borrow error, though it generates a warning saying mut isn't needed
         let mut file = file;
         let mut data:Vec<u8> = Vec::new();
         let res = file.read_to_end(&mut data);
         match res {
-            Err(e) => Err(format!("{:?}", e)),
+            Err(e) => make_err(&format!("{:?}", e)),
             Ok(_) => Ok(data) // drop length and just return data
         }
     }
@@ -66,13 +70,13 @@ pub fn slurp_bin_file(fname:&str) -> Vec<u8> {
 }
 
 pub fn slurp_text_file(fname:&str) -> String {
-    fn slurper (file:File) -> Result<String,String> {
+    fn slurper (file:File) -> Result<String> {
         // avoid borrow error, though it generates a warning saying mut isn't needed
         let mut file = file;
         let mut s = String::new();
         let res = file.read_to_string(&mut s);
         match res {
-            Err(e) => Err(format!("{:?}", e)),
+            Err(e) => make_err(&format!("{:?}", e)),
             Ok(_) => Ok(s) // drop length and just return data
         }
     }
@@ -136,7 +140,7 @@ const SEP:&'static str = "\n";
 
 // TODO: make this the composable with canon_lines once I figure out the Trait/Type issues
 // and make a sane interface.
-pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>,String> {
+pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>> {
     let mut out:Vec<u8> = Vec::new();
     let data = &data[0 .. data.len()];
 
@@ -146,10 +150,10 @@ pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>,String> {
     let in_lines = br.lines();
     for l in in_lines {
         match l {
-            Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+            Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
             Ok(l) => {
                 match write!(out,"{}{}",l,SEP) {
-                    Err(e) => return Err(format!("Failed to read line from alleged text source: {}", e)),
+                    Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
                     Ok(_) => ()
                 }
             }
@@ -160,7 +164,7 @@ pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>,String> {
 
 // TODO: would be nice if this could take a Read object, or even a BufReader's Lines object,
 // but I can't figure how to make those work with the type system.
-pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>,String> {
+pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>> {
     let mut out_buf:Vec<u8> = Vec::new();
 
     // TODO: this string handling is abysmal.  #imdoingitwrongihope
@@ -181,7 +185,7 @@ pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>,String> {
         let l = if l.ends_with("\r") { trim_end(&chars,1) } else { l.to_owned() };
 
         match write!(out_buf, "{}\n",l) {
-            Err(e) => return Err(format!("Failed to write line string to stream buffer: {}", e)),
+            Err(e) => return make_err(&format!("Failed to write line string to stream buffer: {}", e)),
             Ok(_) => ()
         }
     }

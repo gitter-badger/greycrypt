@@ -14,6 +14,7 @@ use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
 use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek,Result};
 use std::io;
+use util::make_err;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
@@ -40,10 +41,6 @@ pub struct SyncFile {
     pub is_binary: bool,
     pub is_deleted: bool,
     sync_file_state: SyncFileState
-}
-
-fn make_err<T> (m:&str) -> Result<T> {
-    Err(io::Error::new(io::ErrorKind::Other, m))
 }
 
 impl SyncFile {
