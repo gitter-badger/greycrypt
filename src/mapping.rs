@@ -79,7 +79,12 @@ impl Mapping {
                             // find the relpath
                             let relpath = &nativefile[ps.len()..].to_owned();
                             let relpath = util::canon_path(relpath);
-                            // TODO: validate that kw, relpath have non-zero length
+                            if kw.is_empty() {
+                                panic!("Empty mapped keyword for path: {}", nativefile);
+                            }
+                            if relpath.is_empty() {
+                                panic!("Empty relpath for path: {}", nativefile);
+                            }                            
                             res = Some((kw,relpath));
                             break;
                         }

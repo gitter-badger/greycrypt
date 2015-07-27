@@ -279,7 +279,6 @@ impl SyncFile {
             Ok(stuff) => stuff
         };
         
-        // TODO: surely this unpacking code can be cut down in size alot
         let keyword:String = {
             match mdmap.get("kw") {
                 None => return make_err(&format!("Key 'kw' is required in metadata")),
@@ -329,7 +328,6 @@ impl SyncFile {
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
-        // TODO: there must be a better way. THE TRUTH IS OUT THERE.
         let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];       
         for i in 0..IV_SIZE {
             iv_copy[i] = iv[i]

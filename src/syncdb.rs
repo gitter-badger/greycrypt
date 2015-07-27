@@ -72,8 +72,8 @@ impl SyncDb {
             native_mtime: native_mtime
         };
 
-        // write to disk
-        // TODO: should probably use toml for this
+        // write to disk: two-line file
+        // should switch to toml if this gets more complicated
         {
             let storepath:PathBuf = self.get_store_path(&sf.id);
 
