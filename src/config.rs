@@ -120,7 +120,11 @@ fn pw_prompt() -> String {
     password.to_owned()
 }
 
-// TODO: this function should just return a Result instead of panicking
+// Parse the specified toml config file.  If None, parse file named by
+// def_config_file() in the working directory.  Panics if there is 
+// anything wrong with the file.
+// Note: maybe should change this to return a Result instead of panicking,
+// but the use of helper closures here makes it more convenient to just panic.
 pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     let file = match cfgfile {
         None => def_config_file(),
