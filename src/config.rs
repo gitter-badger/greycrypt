@@ -72,7 +72,7 @@ impl SyncConfig {
 }
 
 pub fn def_config_file() -> String {
-    let mut file = "mapping".to_owned();
+    let mut file = "config".to_owned();
     if !IS_REL {
         file.push_str(".");
         file.push_str(BUILD_PREFIX);
