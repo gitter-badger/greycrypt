@@ -468,20 +468,18 @@ impl SyncFile {
             self.decrypt_helper(conf,out)
         } else {
             let mut temp_out:Vec<u8> = Vec::new();
-            match self.decrypt_helper(conf,&mut temp_out) {
-                Err(e) => return Err(e),
-                Ok(_) => {
-                    //println!("dec: {:?}", String::from_utf8(temp_out.clone()).unwrap());
-                    match util::decanon_lines(&temp_out) {
-                        Err(e) => return make_err(&format!("Decanon error: {}", e)),
-                        Ok(temp_out) => {
-                            try!(out.write_all(&temp_out)); 
-                        }
-                    }
-
-                    Ok(())
+            
+            try!(self.decrypt_helper(conf,&mut temp_out));
+            
+            //println!("dec: {:?}", String::from_utf8(temp_out.clone()).unwrap());
+            match util::decanon_lines(&temp_out) {
+                Err(e) => return make_err(&format!("Decanon error: {}", e)),
+                Ok(temp_out) => {
+                    try!(out.write_all(&temp_out)); 
                 }
             }
+
+            Ok(())
         }
     }
 
@@ -504,7 +502,7 @@ impl SyncFile {
         if !outpath_par.is_dir() {
             let res = create_dir_all(&outpath_par);
             match res {
-                Err(e) => return make_err(&format!("Failed to create output directory: {:?}: {:?}", outpath_par, e)),
+                Err(e) => return make_err(&format!("Failed to create output local directory: {:?}: {:?}", outpath_par, e)),
                 Ok(_) => ()
             }
         }
@@ -566,25 +564,13 @@ impl SyncFile {
         let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
 
         // write sync id to file (unencrypted)
-        match writeln!(fout, "{}", sid) {
-            Err(e) => return make_err(&format!("Failed to write sid: {}", e)),
-            Ok(_) => ()
-        }
-
+        try!(writeln!(fout, "{}", sid));
         // write iv to file (unencrypted, base64 encoded)
-        match writeln!(fout, "{}", iv.to_base64(STANDARD)) {
-            Err(e) => return make_err(&format!("Failed to write iv: {}", e)),
-            Ok(_) => ()
-        }
-
+        try!(writeln!(fout, "{}", iv.to_base64(STANDARD)));
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
-        match self.pack_metadata(conf, &mut v) {
-            Err(e) => return make_err(&format!("Failed to write metadata: {}", e)),
-            Ok(_) => ()
-        }
-
-        // pass true to signal EOF so that the metadata can be decrypted without needing to read
+        try!(self.pack_metadata(conf, &mut v));
+        // pass true to indicate EOF so that the metadata can be decrypted without needing to read
         // the whole file.
         let res = crypto.encrypt(&v[..], true);
 
@@ -624,7 +610,7 @@ impl SyncFile {
 
         // read, encrypt, and write file data, not slurping because it could be big
         let mut fin = match File::open(&self.nativefile) {
-            Err(e) => { return make_err(&format!("Can't open input native file: {}: {}", &self.nativefile, e)) },
+            Err(e) => return make_err(&format!("Can't open input native file: {}: {}", &self.nativefile, e)),
             Ok(fin) => fin
         };
 
@@ -637,26 +623,20 @@ impl SyncFile {
             let mut buf = &mut v;
 
             loop {
-                let read_res = fin.read(buf);
-                match read_res {
-                    Err(e) => { return make_err(&format!("Read error: {}", e)) },
-                    Ok(num_read) => {
-                        //println!("read {} bytes",num_read);
-                        let enc_bytes = &buf[0 .. num_read];
-                        let eof = num_read == 0;
-                        let res = crypto.encrypt(enc_bytes, eof);
-                        match res {
-                            Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
-                            Ok(d) => {
-                                let dlen = d.len();
-                                try!(fout.write_all(&d))
-                            }
-                        }
-                        //println!("encrypted {} bytes",num_read);
-                        if eof {
-                            break;
-                        }
+                let num_read = try!(fin.read(buf));
+                let enc_bytes = &buf[0 .. num_read];
+                let eof = num_read == 0;
+                let res = crypto.encrypt(enc_bytes, eof);
+                match res {
+                    Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
+                    Ok(d) => {
+                        let dlen = d.len();
+                        try!(fout.write_all(&d))
                     }
+                }
+                //println!("encrypted {} bytes",num_read);
+                if eof {
+                    break;
                 }
             }
         } else {
