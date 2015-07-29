@@ -122,7 +122,6 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     };
 
     if sf.is_deleted {
-        // TODO: bah, maybe use match when I've worked this out
         let revguid_changed = sf.revguid != sync_entry.revguid;
 
         if revguid_changed {
@@ -948,7 +947,7 @@ pub fn do_sync(state:&mut SyncState) {
     for (sid,action) in actions {
         match action {
             SyncAction::Nothing => (),
-            _ => warn!("Leftover action in list: {:?} for {:?}", action, sid)
+            _ => error!("Leftover action in list: {:?} for {:?}", action, sid)
         }
     }
 }
