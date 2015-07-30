@@ -4,10 +4,10 @@ use std::path::{PathBuf};
 // use std::collections::HashMap;
 // use std::cmp::Ordering;
 
-
 use syncfile;
 use core;
 
+#[allow(dead_code)]
 pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
     let syncpath = PathBuf::from(filename);
     let mdhash = match syncfile::SyncFile::get_metadata_hash(&state.conf,&syncpath) {
@@ -55,6 +55,7 @@ pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
     }
 }
 
+#[allow(dead_code)]
 pub fn show_conflicted_syncfile_meta(state: &mut core::SyncState) {
     let mut sync_files:Vec<String> = Vec::new();
 

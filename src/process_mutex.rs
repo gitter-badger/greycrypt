@@ -115,6 +115,8 @@ fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 	}
 }
 
+// TODO: need test for this, but that test needs to fork()
+#[allow(dead_code)]
 pub fn acquire(name:&str) -> Result<ProcessMutex,String> {
 	// convert name into a filename
 	let name = util::canon_path(name);
