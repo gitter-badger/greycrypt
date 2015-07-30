@@ -6,7 +6,6 @@
 #![allow(unused_variables)]
 
 #![feature(path_ext)]
-
 #![feature(append)] // for sync dedup, hopefully can remove
 
 #[macro_use]

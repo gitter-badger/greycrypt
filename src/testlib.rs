@@ -58,13 +58,13 @@ pub mod util {
         syncdb_dir.push("testdata");
         syncdb_dir.push("out_syncdb");           
 
-        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
+        let ek: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig::new(
             outpath.to_str().unwrap().to_owned(),
             unit_test_hostname(),
             mapping,
-            Some(ec),
+            Some(ek),
             Some(syncdb_dir.to_str().unwrap().to_owned()),
             Vec::new());
         conf

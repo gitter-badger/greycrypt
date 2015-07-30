@@ -1065,13 +1065,13 @@ mod tests {
         let mapping = toml::Parser::new(&mapping).parse().unwrap();
         let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
 
-        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
+        let ek: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
         let conf = config::SyncConfig::new(
             sync_dir.to_owned(),
             testlib::util::unit_test_hostname(),
             mapping,
-            Some(ec),
+            Some(ek),
             Some(syncdb_dir.to_owned()),
             Vec::new());
             
@@ -1218,6 +1218,19 @@ mod tests {
         // verify that the number found == expected
         assert_eq!(nfiles.len(), expected_nativefiles);
     }
+    
+    fn basic_alice_bob_setup(testname:&str) -> (MetaConfig, MetaConfig) {
+        let dirs = init_test_directories(testname);
+        let (mut alice_mconf, mut bob_mconf) = config_alice_and_bob(&dirs);
+
+        // populate alice's native directory
+        populate_native(&dirs.alice_native, Some("docs"));
+        // map the path in both configs
+        add_native_path(&mut alice_mconf, "docs");
+        add_native_path(&mut bob_mconf, "docs");    
+
+        (alice_mconf, bob_mconf)
+    }
 
     #[test]
     fn basic_sync() {
@@ -1225,23 +1238,31 @@ mod tests {
         // verify sync state for alice (see below)
         // run a sync state for bob
         // verify sync state for bob
-        let dirs = init_test_directories("basic_sync");
-        let (ref mut alice_mconf, ref mut bob_mconf) = config_alice_and_bob(&dirs);
-        
-        // populate alice's native directory
-        populate_native(&dirs.alice_native, Some("docs"));
-        // map the path in both configs
-        add_native_path(alice_mconf, "docs");
-        add_native_path(bob_mconf, "docs");
-        
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_sync");
         // sync alice
-        core::do_sync(&mut alice_mconf.state);
-        
+        core::do_sync(&mut alice_mconf.state);        
         verify_sync_state(alice_mconf, 2, 2);
-        
         // sync bob
-        core::do_sync(&mut bob_mconf.state);
-        
+        core::do_sync(&mut bob_mconf.state);        
         verify_sync_state(bob_mconf, 2, 2);
     }
+    
+    #[test]
+    // TODO: should_panic is not granular enough.  we want this test to succeed only if the sync panics,
+    // and really only if it panics because of password mismatch.  Maybe need something like
+    // state.terminate(reason) which panics, but first lets the test get a callback to inspect
+    // the reason. Note, catch_panic also doesn't appear to provide enough information that we can use 
+    // it like this.
+    #[should_panic] 
+    fn wrong_encryption_key() {
+        // run a sync on alice, then try to run a sync on bob with different encryption key.  should panic.
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("wrong_encryption_key");
+        core::do_sync(&mut alice_mconf.state);
+        
+        // change bob's password
+        let ek: [u8;config::KEY_SIZE] = [1; config::KEY_SIZE];
+        bob_mconf.state.conf.encryption_key = Some(ek);
+        
+        core::do_sync(&mut bob_mconf.state);;
+     }
 }
