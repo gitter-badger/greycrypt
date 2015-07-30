@@ -157,10 +157,8 @@ impl SyncDb {
 mod tests {
     extern crate toml;
 
-    use std::fs::{PathExt};
     use std::path::{PathBuf};
     use std::env;
-    use std::fs::remove_dir_all;
 
     use util;
     use syncdb;
@@ -171,26 +169,7 @@ mod tests {
     fn store() {
         let conf = testlib::util::get_mock_config();
 
-        {
-            // if the previous test sync db exists, clear it out
-            // TODO: should break this out into test lib function for reuse
-            let wd = env::current_dir().unwrap();
-            let sdb_path = conf.syncdb_dir.clone().unwrap();
-            let sdb_path = PathBuf::from(sdb_path);
-            if sdb_path.is_dir() {
-                let sdb_path_str = sdb_path.to_str().unwrap();
-                if !util::canon_path(sdb_path_str).contains("testdata/out_syncdb") ||
-                    !sdb_path_str.starts_with(wd.to_str().unwrap()) ||
-                    sdb_path_str.contains("..") {
-                    panic!("Refusing to remove this unrecognized test syncdb: {:?}", sdb_path)
-                } else {
-                    match remove_dir_all(sdb_path_str) {
-                        Err(e) => panic!("Failed to remove previous output syncdb: {:?}: {:?}", sdb_path_str, e),
-                        Ok(_) => ()
-                    }
-                }
-            }
-        }
+        testlib::util::clear_test_syncdb(&conf);
 
         let mut syncdb = match syncdb::SyncDb::new(&conf) {
             Err(e) => panic!("Failed to create syncdb: {:?}", e),
