@@ -955,8 +955,9 @@ pub fn do_sync(state:&mut SyncState) {
 #[cfg(test)]
 mod tests {
     // Ok, here were gonna test ALL of the core sync functionality.
-    // HAHA just kidding.  But we'll get a lot of it.  This is an 
+    // HAHA just kidding.  But we'll get a lot of it.  These are 
     // integration test rather than a strict unit test.
+    // TODO: move these into "tests/" once I figure how to import stuff from the greycrypt crate.
     
     // The basic idea is to create a fake sync situation, with two
     // actors, Alice and Bob, that are both configured to use the same
