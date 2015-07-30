@@ -136,17 +136,12 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     type TomlTable = BTreeMap<String, toml::Value>;
 
     let get_optional_section = |sname:&str| {
-        match toml.get(sname) {
-            None => None,
-            Some (s) => {
-                match s.as_table() {
-                    None => panic!("Property '{}' must be a table, like: [{}]", sname, sname),
-                    Some (s) => {
-                        Some(s)
-                    }
-                }
+        toml.get(sname).map(|s| {
+            match s.as_table() {
+                None => panic!("Property '{}' must be a table, like: [{}]", sname, sname),
+                Some (s) => s
             }
-        }
+        })
     };
 
     let get_required_section = |sname:&str| {
@@ -164,15 +159,12 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     };
 
     let get_optional_string = |setting:&str, table:&TomlTable| {
-        match table.get(setting) {
-            None => None,
-            Some (s) => {
-                match s.as_str() {
-                    None => panic!("{} must be a string", setting),
-                    Some(name) => Some(name.trim().to_owned())
-                }
-            }
-        }
+        table.get(setting).map(|s| {
+            match s.as_str() {
+                None => panic!("{} must be a string", setting),
+                Some(name) => name.trim().to_owned()
+            }        
+        })
     };
 
     // load config
