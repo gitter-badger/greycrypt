@@ -954,10 +954,92 @@ pub fn do_sync(state:&mut SyncState) {
 
 #[cfg(test)]
 mod tests {
-    //use std::path::{Path, PathBuf};
-    //use core;
+    // Ok, here were gonna test ALL of the core sync functionality.
+    // HAHA just kidding.  But we'll get a lot of it.  This is an 
+    // integration test rather than a strict unit test.
+    
+    // The basic idea is to create a fake sync situation, with two
+    // actors, Alice and Bob, that are both configured to use the same
+    // syncdir and similar native paths.  Then we test various perumations of syncing;
+    // Create some native files as Alice, run her Sync, run Bob's sync,
+    // does he get them?  Repeat for every interesting test case.  
+    //
+    // Alice and Bob share a syncdir, but they must have different syncdbs and
+    // local path directories, otherwise they will step on each another, a situation
+    // that is prevented in the real world by the process/syncdir mutexes.  Actually, 
+    // even sharing a syncdir doesn't map to the real world, because in the RW
+    // the sync dir is only virtually the same; e.g in google drive, to processes 
+    // that "simultaneously" (for some definition) write the same file to the directory
+    // will cause that system to generate two different files with different names;
+    // (the dreaded Foo (1).txt situation). 
+    //
+    // But I digress.  Back to directories.  Actually, each _test_ will need to have 
+    // its own test-specific directory structure, because the cargo test harness runs them all in 
+    // parallel - which is good, I don't want to be waiting around for the tests like I 
+    // wait around for the compiler </bitterness>.  Since all are in parallel, the tests
+    // will stomp each other if using same directories.  So we create a directory set
+    // for each test, by name.  This has the added virtue that if a test fails, we
+    // can inspect the output directory for that test postmortem.
+
+
+    
+    use std::path::{PathBuf};
+    use std::env;
+    use std::fs::{create_dir_all,remove_dir_all,PathExt};
+    
+    // Clean out (remove) and recreate directories required for the target test.  
+    // This function operates on $wd/testdata/out_core/<testname>_<dirtype> directories
+    // only.  It returns a struct of all the dir names. 
+    struct TestDirectories {
+        sync_dir: String,
+        alice_syncdb: String,
+        alice_native: String,
+        bob_syncdb: String,
+        bob_native: String
+    }
+    
+    fn init_test_directories(testname:&str) -> TestDirectories {   
+        let recycle_test_dir = |relpath:&str| {
+            let wd = env::current_dir().unwrap();
+            let mut path = PathBuf::from(&wd);
+            path.push("testdata");
+            path.push("out_core");
+            if testname.contains("..") {
+                panic!("illegal testname, '..' not allowed: {}", testname);
+            }
+            path.push(testname);        
+            if relpath.contains("..") {
+                panic!("illegal relpath, '..' not allowed: {}", relpath);
+            }            
+            path.push(relpath);
+            
+            let path_str = path.to_str().unwrap();
+            if path.is_dir() {
+                //println!("would remove {:?}", path);
+                match remove_dir_all(&path) {
+                    Err(e) => panic!("Failed to remove test output directory: {:?}: {:?}", path_str, e),
+                    Ok(_) => ()
+                }
+            }
+            match create_dir_all(&path_str) {
+                Err(e) => panic!("Failed to create test output directory: {:?}: {:?}", path_str, e),
+                Ok(_) => ()
+            }
+            
+            path_str.to_owned()            
+        };
+        
+        TestDirectories {
+            sync_dir: recycle_test_dir("syncdir.lastrun"),
+            alice_syncdb: recycle_test_dir("syncdb.alice.lastrun"), 
+            alice_native: recycle_test_dir("native.alice.lastrun"),
+            bob_syncdb: recycle_test_dir("syncdb.bob.lastrun"),
+            bob_native: recycle_test_dir("native.bob.lastrun") 
+        }
+    }
 
     #[test]
-    fn todo() {
+    fn basic_sync() {
+        init_test_directories("basic_sync");
     }
 }
