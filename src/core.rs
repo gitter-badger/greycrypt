@@ -1099,20 +1099,20 @@ mod tests {
         (alicec,bobc)
     }
     
-    fn populate_native(target_native_dir:&str,subdir: Option<&str>) {
-        let cp_or_panic = |src:&str,dest:&PathBuf| {
-            let mut dest = dest.clone();
-            let srcpath = PathBuf::from(src);
-            if dest.is_dir() {
-                dest.push(srcpath.file_name().unwrap());
-            }
-            //println!("cp: {:?} -> {:?}", srcpath, dest);
-            match copy(src,dest.to_str().unwrap()) {
-                Err(e) => panic!("Failed to copy test native file {} to {:?}: {}", src, dest, e),
-                Ok(_) => () 
-            } 
-        };
+    fn cp_or_panic(src:&str,dest:&PathBuf) {
+        let mut dest = dest.clone();
+        let srcpath = PathBuf::from(src);
+        if dest.is_dir() {
+            dest.push(srcpath.file_name().unwrap());
+        }
+        //println!("cp: {:?} -> {:?}", srcpath, dest);
+        match copy(src,dest.to_str().unwrap()) {
+            Err(e) => panic!("Failed to copy test file {} to {:?}: {}", src, dest, e),
+            Ok(_) => () 
+        } 
+    }
         
+    fn populate_native(target_native_dir:&str,subdir: Option<&str>) {
         let outpath = {
             let mut outpath = PathBuf::from(target_native_dir);
             match subdir {
@@ -1264,5 +1264,34 @@ mod tests {
         bob_mconf.state.conf.encryption_key = Some(ek);
         
         core::do_sync(&mut bob_mconf.state);;
+     }
+     
+     #[test]
+     fn basic_dedup() {
+        // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
+        // it should de-dup.  
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_dedup");
+        core::do_sync(&mut alice_mconf.state);
+        
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        let orig_count = syncfiles.len();
+        // lets make a nice dup disaster area in there...
+        let max_iter = 3;
+        for i in 0..max_iter {
+            for syncfile in &syncfiles {
+                let mut dest = String::new();
+                dest.push_str(syncfile);
+                dest.push_str(&format!(".copy{}.dat", i));
+                cp_or_panic(syncfile, &PathBuf::from(dest));
+            }
+        }
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        assert_eq!(syncfiles.len(), (max_iter + 1) * orig_count);
+        
+        // run sync again
+        core::do_sync(&mut alice_mconf.state);
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        // doesn't really matter which files survived, as long as the count is right
+        assert_eq!(syncfiles.len(), orig_count);
      }
 }
