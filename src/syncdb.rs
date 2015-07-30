@@ -179,7 +179,7 @@ mod tests {
         let wd = env::current_dir().unwrap();
         let mut nativepath = PathBuf::from(&wd);
         nativepath.push("testdata");
-        nativepath.push("test_native_file.txt");
+        nativepath.push("test_text_file.txt");
 
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");

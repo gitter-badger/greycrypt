@@ -294,7 +294,7 @@ mod tests {
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");
-        testpath.push("test_native_file.txt");
+        testpath.push("test_text_file.txt");
 
         let path = testpath.to_str().unwrap();
         let srctext = util::slurp_text_file(path);
@@ -310,7 +310,7 @@ mod tests {
         {
             let mut testpath = PathBuf::from(&wd);
             testpath.push("testdata");
-            testpath.push("test_native_file.txt");
+            testpath.push("test_text_file.txt");
             let path = testpath.to_str().unwrap();
 
             match util::file_is_binary(&path) {

@@ -703,7 +703,7 @@ mod tests {
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");
-        testpath.push("test_native_file.txt");
+        testpath.push("test_text_file.txt");
 
         let savetp = testpath.to_str().unwrap();
 
@@ -728,7 +728,7 @@ mod tests {
                 assert_eq!(eid,sf.id);
                 assert_eq!(eid,file_syncid);
                 assert_eq!(sf.keyword, "GCPROJROOT");
-                assert_eq!(sf.relpath, "/testdata/test_native_file.txt");
+                assert_eq!(sf.relpath, "/testdata/test_text_file.txt");
                 // revguid could be anything, but if it wasn't a guid we would already have failed
                 assert_eq!(sf.nativefile, savetp);
                 assert_eq!(sf.is_binary, false);
@@ -768,7 +768,7 @@ mod tests {
                         Ok(outfile) => {
                             let mut ex_out = outpath.clone();
                             ex_out.push("testdata");
-                            ex_out.push("test_native_file.txt");
+                            ex_out.push("test_text_file.txt");
                             assert_eq!(outfile, ex_out.to_str().unwrap());
                             outfile
                         }
@@ -845,7 +845,7 @@ mod tests {
         let wd = env::current_dir().unwrap();
         let mut testpath = PathBuf::from(&wd);
         testpath.push("testdata");
-        testpath.push("test_native_file.txt");
+        testpath.push("test_text_file.txt");
         let srctext = util::slurp_bin_file(&testpath.to_str().unwrap().to_owned());
 
         let mut syncpath = PathBuf::from(&wd);
