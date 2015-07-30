@@ -34,7 +34,7 @@ fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 		let res = open(&pb, flags, S_IWUSR);
 
 		let fd = match res {
-			Err(e) => {
+			Err(_) => {
 				//println!("Failed to open");
 				return res;
 			}
@@ -54,8 +54,8 @@ fn create_mutex(name:&str) -> Result<ProcessMutex,String> {
 		//println!("excl lock");
 		let res = fcntl(fd, F_SETLK(&fl));
 		match res {
-			Err(e) => res,
-			Ok(code) => Ok(fd)
+			Err(_) => res,
+			Ok(_) => Ok(fd)
 		}
 	};
 

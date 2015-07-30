@@ -1,10 +1,6 @@
 #![feature(plugin)]
 #![plugin(clippy)]
 
-// this is really spammy for me, will have to enable periodically
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 #![feature(path_ext)]
 #![feature(append)] // for sync dedup, hopefully can remove
 
@@ -33,8 +29,6 @@ extern crate rpassword;
 
 use getopts::Options;
 use std::env;
-
-
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} [options]", program);
@@ -75,6 +69,7 @@ fn main() {
         Err(e) => panic!("Failed to create process mutex: {}", e),
         Ok(f) => f
     };
+    let _ = mutex; // "fix" unused var warning, we just want it to hang out until it goes out of scope
 
     let mut state = core::SyncState::new(conf,syncdb,log_util);
 

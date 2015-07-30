@@ -428,10 +428,7 @@ impl SyncFile {
                         let res = crypto.decrypt(enc_bytes, eof);
                         match res {
                             Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
-                            Ok(d) => {
-                                let dlen = d.len();
-                                try!(out.write_all(&d))
-                            }
+                            Ok(d) => try!(out.write_all(&d))
                         }
                         if eof {
                             match out.flush() {
@@ -624,10 +621,7 @@ impl SyncFile {
                 let res = crypto.encrypt(enc_bytes, eof);
                 match res {
                     Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
-                    Ok(d) => {
-                        let dlen = d.len();
-                        try!(fout.write_all(&d))
-                    }
+                    Ok(d) => try!(fout.write_all(&d))
                 }
                 //println!("encrypted {} bytes",num_read);
                 if eof {
@@ -660,10 +654,7 @@ impl SyncFile {
 
             match crypto.encrypt(enc_bytes, true) {
                 Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
-                Ok(d) => {
-                    let dlen = d.len();
-                    try!(fout.write_all(&d))
-                }
+                Ok(d) => try!(fout.write_all(&d))
             }
         }
 

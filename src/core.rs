@@ -1176,7 +1176,7 @@ mod tests {
                 Some(entry) => {
                     assert_eq!(entry.revguid, sf.revguid);
                     let nmtime = match util::get_file_mtime(&sf.nativefile) {
-                        Err(e) => panic!("Whoa should have an mtime"),
+                        Err(e) => panic!("Whoa should have an mtime: {}", e),
                         Ok(nmtime) => nmtime
                     };                    
                     assert_eq!(entry.native_mtime, nmtime);
@@ -1271,7 +1271,7 @@ mod tests {
      fn basic_dedup() {
         // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
         // it should de-dup.  
-        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_dedup");
+        let (ref mut alice_mconf, _) = basic_alice_bob_setup("basic_dedup");
         core::do_sync(&mut alice_mconf.state);
         
         let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());

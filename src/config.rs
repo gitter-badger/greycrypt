@@ -33,7 +33,7 @@ impl fmt::Debug for SyncConfig {
    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ek_str = match self.encryption_key {
             None => "missing",
-            Some(ek) => "present (value suppressed)"
+            Some(_) => "present (value suppressed)"
         };
         
         write!(f, "SyncConfig {{ sync_dir: {:?}, host_name: {:?}, mapping: {:?}, encryption_key: {}, syncdb_dir: {:?}, native_paths: {:?} }}", 
