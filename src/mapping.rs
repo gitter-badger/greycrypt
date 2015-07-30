@@ -6,6 +6,7 @@ extern crate toml;
 
 use util;
 
+#[derive(Debug)]
 pub struct Mapping {
     dir_to_keyword: HashMap<String,String>,
     keyword_to_dir: HashMap<String,String>

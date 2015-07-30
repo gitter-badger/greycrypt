@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::path::{PathBuf};
 use std::fs::{PathExt};
+use std::fmt;
 use std::env;
 use std::io;
 use std::io::BufRead;
@@ -26,6 +27,23 @@ pub struct SyncConfig {
     pub encryption_key: Option<[u8; KEY_SIZE]>,
     pub syncdb_dir: Option<String>,
     pub native_paths: Vec<String>
+}
+
+impl fmt::Debug for SyncConfig {
+   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ek_str = match self.encryption_key {
+            None => "missing",
+            Some(ek) => "present (value suppressed)"
+        };
+        
+        write!(f, "SyncConfig {{ sync_dir: {:?}, host_name: {:?}, mapping: {:?}, encryption_key: {}, syncdb_dir: {:?}, native_paths: {:?} }}", 
+            self.sync_dir,
+            self.host_name, 
+            self.mapping,
+            ek_str,
+            self.syncdb_dir,
+            self.native_paths)
+    }
 }
 
 #[cfg(feature = "release_paths")]

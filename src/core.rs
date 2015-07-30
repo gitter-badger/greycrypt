@@ -975,21 +975,30 @@ mod tests {
     //
     // But I digress.  Back to directories.  Actually, each _test_ will need to have 
     // its own test-specific directory structure, because the cargo test harness runs them all in 
-    // parallel - which is good, I don't want to be waiting around for the tests like I 
-    // wait around for the compiler </bitterness>.  Since all are in parallel, the tests
+    // parallel - which is good, I don't want to be waiting around for the tests.
+    // Since all are in parallel, the tests
     // will stomp each other if using same directories.  So we create a directory set
     // for each test, by name.  This has the added virtue that if a test fails, we
     // can inspect the output directory for that test postmortem.
-
+    //
+    // Another way that these tests deviate from the RW is that we run syncs serially,
+    // but in the RW of course, both greycrypt instances and the cloud provider run 
+    // in parallel.  In the future in may be useful to add more coverage for those cases.
 
     
     use std::path::{PathBuf};
     use std::env;
-    use std::fs::{create_dir_all,remove_dir_all,PathExt};
+    use std::fs::{create_dir_all,remove_dir_all,PathExt,copy};
     
-    // Clean out (remove) and recreate directories required for the target test.  
-    // This function operates on $wd/testdata/out_core/<testname>_<dirtype> directories
-    // only.  It returns a struct of all the dir names. 
+    extern crate toml;
+    
+    use core;
+    use config;
+    use logging;
+    use mapping;
+    use testlib;
+    use syncdb;
+    
     struct TestDirectories {
         sync_dir: String,
         alice_syncdb: String,
@@ -997,7 +1006,10 @@ mod tests {
         bob_syncdb: String,
         bob_native: String
     }
-    
+
+    // Clean out (remove) and recreate directories required for the target test.  
+    // This function operates on $wd/testdata/out_core/<testname>_<dirtype> directories
+    // only.  It returns a struct of all the dir names.     
     fn init_test_directories(testname:&str) -> TestDirectories {   
         let recycle_test_dir = |relpath:&str| {
             let wd = env::current_dir().unwrap();
@@ -1037,9 +1049,120 @@ mod tests {
             bob_native: recycle_test_dir("native.bob.lastrun") 
         }
     }
+    
+    // This struct contains a normal sync state, as well as additional data useful for the
+    // unit tests.
+    //#[derive(Debug)]
+    struct MetaConfig {
+        native_root: String,
+        state: core::SyncState,
+    }
+    
+	fn get_meta_config(native_dir:&str, syncdb_dir:&str, sync_dir:&str, log_util:logging::LoggerUtil) -> MetaConfig {       
+        let mapping = format!("home = '{}'", native_dir);
+        let mapping = toml::Parser::new(&mapping).parse().unwrap();
+        let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
+
+        let ec: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
+
+        let conf = config::SyncConfig::new(
+            sync_dir.to_owned(),
+            testlib::util::unit_test_hostname(),
+            mapping,
+            Some(ec),
+            Some(syncdb_dir.to_owned()),
+            Vec::new());
+            
+        let syncdb = match syncdb::SyncDb::new(&conf) {
+            Err(e) => panic!("Failed to create syncdb: {:?}", e),
+            Ok(sdb) => sdb
+        };
+        
+        let state = core::SyncState::new(conf,syncdb,log_util);
+                      
+        MetaConfig {
+            native_root: native_dir.to_owned(),
+            state: state
+        }
+    }    
+    
+    fn config_alice_and_bob(dirs:&TestDirectories) -> (MetaConfig, MetaConfig) {
+        let log_util = match logging::SimpleLogger::init() {
+            Err(e) => panic!("Failed to init logger: {}", e),
+            Ok(l) => l
+        };
+        
+        let alicec = get_meta_config(&dirs.alice_native, &dirs.alice_syncdb, &dirs.sync_dir, log_util.clone());
+        let bobc = get_meta_config(&dirs.bob_native, &dirs.bob_syncdb, &dirs.sync_dir, log_util.clone());
+        (alicec,bobc)
+    }
+    
+    fn populate_native(target_native_dir:&str,subdir: Option<&str>) {
+        let cp_or_panic = |src:&str,dest:&PathBuf| {
+            let mut dest = dest.clone();
+            let srcpath = PathBuf::from(src);
+            if dest.is_dir() {
+                dest.push(srcpath.file_name().unwrap());
+            }
+            //println!("cp: {:?} -> {:?}", srcpath, dest);
+            match copy(src,dest.to_str().unwrap()) {
+                Err(e) => panic!("Failed to copy test native file {} to {:?}: {}", src, dest, e),
+                Ok(_) => () 
+            } 
+        };
+        
+        let outpath = {
+            let mut outpath = PathBuf::from(target_native_dir);
+            match subdir {
+                None => outpath,
+                Some (subdir) => {
+                    outpath.push(subdir);
+                    create_dir_all(outpath.to_str().unwrap()).unwrap();
+                    outpath
+                }
+            }
+        };
+        
+        cp_or_panic("testdata/test_text_file.txt", &outpath);
+        cp_or_panic("testdata/test_binary.png", &outpath);    
+    }
+    
+    fn add_native_path(mconf: &mut MetaConfig, path: &str) {
+        let mut pb = PathBuf::from(&mconf.native_root);
+        pb.push(path);
+        mconf.state.conf.native_paths.push(pb.to_str().unwrap().to_owned());
+    }
 
     #[test]
     fn basic_sync() {
-        init_test_directories("basic_sync");
+        // run a sync on alice
+        // verify sync state for alice (see below)
+        // run a sync state for bob
+        // verify sync state for bob
+        
+        // verify sync state:
+        //  the number of files in the native directory == the number of files in the sync dir
+        //  the decrypted contents of each sync file match the contents in the native directory
+        //  the revguid for each syncfile matches the revguid in the syncdb
+        //  the mtime for each native file matches the mtime in the syncdb
+    
+        let dirs = init_test_directories("basic_sync");
+        let (ref mut alice_mconf, ref mut bob_mconf) = config_alice_and_bob(&dirs);
+        
+        // populate alice's native directory
+        populate_native(&dirs.alice_native, Some("docs"));
+        // map the path in both configs
+        add_native_path(alice_mconf, "docs");
+        add_native_path(bob_mconf, "docs");
+        
+        // sync alice
+        core::do_sync(&mut alice_mconf.state);
+        
+        // TODO: test alice state
+        
+        // sync bob
+        core::do_sync(&mut bob_mconf.state);
+        
+        // TODO: test bob state
     }
 }

@@ -17,6 +17,7 @@ impl log::Log for SimpleLogger {
     }        
 }
 
+#[derive(Clone)]
 pub struct LoggerUtil {
     pub warnonce_messages: HashSet<String>
 }
