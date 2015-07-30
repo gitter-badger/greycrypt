@@ -48,7 +48,7 @@ impl SyncConfig {
         mapping: mapping::Mapping,
         ek:Option<[u8;KEY_SIZE]>,
         syncdb_dir:Option<String>,
-        native_paths: Vec<String>) -> SyncConfig {
+        native_paths: Vec<String>) -> Self {
             let mut pb = PathBuf::from(&sync_dir);
 
             // let tests omit build prefix

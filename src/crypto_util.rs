@@ -11,7 +11,7 @@ pub struct CryptoHelper {
 }
 
 impl CryptoHelper {
-    pub fn new(key:&[u8], iv:&[u8]) -> CryptoHelper {
+    pub fn new(key:&[u8], iv:&[u8]) -> Self {
         let encryptor = aes::cbc_encryptor(
                 aes::KeySize::KeySize256,
                 key,

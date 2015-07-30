@@ -12,7 +12,7 @@ pub struct Mapping {
 }
 
 impl Mapping {
-    pub fn new(toml_src: &BTreeMap<String, toml::Value>) -> Result<Mapping,String> {
+    pub fn new(toml_src: &BTreeMap<String, toml::Value>) -> Result<Self,String> {
         // build the dir/keyword mapping and reverse mapping
         // keys in both cases are stored uppercase, for insensitivity
 

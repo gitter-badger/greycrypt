@@ -39,7 +39,7 @@ pub struct SyncFileCache {
 }
 
 impl SyncFileCache {
-    pub fn new() -> SyncFileCache {
+    pub fn new() -> Self {
         SyncFileCache {
             map: HashMap::new()
         }
@@ -78,7 +78,7 @@ pub struct SyncState {
 }
 
 impl SyncState {
-    pub fn new(conf:config::SyncConfig, syncdb: syncdb::SyncDb, log_util: logging::LoggerUtil) -> SyncState {
+    pub fn new(conf:config::SyncConfig, syncdb: syncdb::SyncDb, log_util: logging::LoggerUtil) -> Self {
         SyncState {
             syncdb: syncdb,
             conf: conf,

@@ -21,7 +21,7 @@ pub struct SyncDb {
 }
 
 impl SyncDb {
-    pub fn new(conf: &config::SyncConfig) -> Result<SyncDb,String> {
+    pub fn new(conf: &config::SyncConfig) -> Result<Self,String> {
         // if conf has a db dir, use that; otherwise, form it from the app data path
         let syncdb_dir = {
             match conf.syncdb_dir {
