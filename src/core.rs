@@ -986,7 +986,7 @@ mod tests {
     // in parallel.  In the future in may be useful to add more coverage for those cases.
 
     
-    use std::path::{PathBuf};
+    use std::path::{Path,PathBuf};
     use std::env;
     use std::fs::{create_dir_all,remove_dir_all,PathExt,copy};
     
@@ -998,6 +998,8 @@ mod tests {
     use mapping;
     use testlib;
     use syncdb;
+    use syncfile;
+    use util;
     
     struct TestDirectories {
         sync_dir: String,
@@ -1133,19 +1135,96 @@ mod tests {
         mconf.state.conf.native_paths.push(pb.to_str().unwrap().to_owned());
     }
 
+    fn find_all_files(dir:&str) -> Vec<String> {
+        let mut files:Vec<String> = Vec::new();
+        {
+            let mut visitor = |pb: &PathBuf| files.push(pb.to_str().unwrap().to_owned());
+    
+            let dp = Path::new(dir);
+            let res = util::visit_dirs(&dp, &mut visitor);
+            match res {
+                Ok(_) => (),
+                Err(e) => panic!("failed to scan directory: {}: {}", dir, e),
+            }
+        }
+        files    
+    }
+    
+    // Verifies that:    
+    //  the number of files in the native directory == the number of files in the sync dir
+    //  the decrypted contents of each sync file match the contents in the native directory
+    //  the revguid for each syncfile matches the revguid in the syncdb
+    //  the mtime for each native file matches the mtime in the syncdb
+    fn verify_sync_state(mconf: &mut MetaConfig, expected_syncfiles: usize, expected_nativefiles: usize) {
+        // find all the syncfiles
+        let syncfiles = find_all_files(mconf.state.conf.sync_dir());
+        // verify that the number found == expected
+        assert_eq!(syncfiles.len(), expected_syncfiles);
+        
+        // reload the syncdb off disk, so that we can check both the one in state and the 
+        // one on disk
+        let mut disk_syncdb = match syncdb::SyncDb::new(&mconf.state.conf) {
+            Err(e) => panic!("Failed to create syncdb: {:?}", e),
+            Ok(sdb) => sdb
+        };
+        
+        let verify_sync_entry = |syncdb: &mut syncdb::SyncDb, sf: &syncfile::SyncFile| {
+            let entry = syncdb.get(sf);
+            match entry {
+                None => panic!("Syncdb should have an entry, but has an entry"),
+                Some(entry) => {
+                    assert_eq!(entry.revguid, sf.revguid);
+                    let nmtime = match util::get_file_mtime(&sf.nativefile) {
+                        Err(e) => panic!("Whoa should have an mtime"),
+                        Ok(nmtime) => nmtime
+                    };                    
+                    assert_eq!(entry.native_mtime, nmtime);
+                }
+            }             
+        }; 
+    
+        // for each syncfile...        
+        for syncpath in &syncfiles {
+            let syncpath = PathBuf::from(&syncpath);
+            
+            // decrypt to mem
+            let mut sf = match syncfile::SyncFile::from_syncfile(&mconf.state.conf,&syncpath) {
+                Err(e) => panic!("Failed to read syncfile: {:?}", e),
+                Ok(sf) => sf
+            };
+
+            let mut data:Vec<u8> = Vec::new();
+
+            match sf.decrypt_to_writer(&mconf.state.conf, &mut data) {
+                Err(e) => panic!("Error {:?}", e),
+                Ok(_) => {
+                    // verify that native file exists and has same contents
+                    let nf = PathBuf::from(&sf.nativefile);
+                    assert!(nf.is_file());
+                    // suck it up
+                    let ndata = util::slurp_bin_file(&sf.nativefile);
+                    // verify
+                    assert_eq!(data,ndata);
+                }
+            }
+            
+            // check revguid, mtime
+            verify_sync_entry(&mut mconf.state.syncdb, &sf);
+            verify_sync_entry(&mut disk_syncdb, &sf);            
+        }
+    
+        // find all the native files
+        let nfiles = find_all_files(&mconf.native_root);
+        // verify that the number found == expected
+        assert_eq!(nfiles.len(), expected_nativefiles);
+    }
+
     #[test]
     fn basic_sync() {
         // run a sync on alice
         // verify sync state for alice (see below)
         // run a sync state for bob
         // verify sync state for bob
-        
-        // verify sync state:
-        //  the number of files in the native directory == the number of files in the sync dir
-        //  the decrypted contents of each sync file match the contents in the native directory
-        //  the revguid for each syncfile matches the revguid in the syncdb
-        //  the mtime for each native file matches the mtime in the syncdb
-    
         let dirs = init_test_directories("basic_sync");
         let (ref mut alice_mconf, ref mut bob_mconf) = config_alice_and_bob(&dirs);
         
@@ -1158,11 +1237,11 @@ mod tests {
         // sync alice
         core::do_sync(&mut alice_mconf.state);
         
-        // TODO: test alice state
+        verify_sync_state(alice_mconf, 2, 2);
         
         // sync bob
         core::do_sync(&mut bob_mconf.state);
         
-        // TODO: test bob state
+        verify_sync_state(bob_mconf, 2, 2);
     }
 }
