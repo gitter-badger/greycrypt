@@ -989,7 +989,9 @@ mod tests {
     
     use std::path::{Path,PathBuf};
     use std::env;
-    use std::fs::{create_dir_all,remove_dir_all,PathExt,copy};
+    use std::io::Write;
+    use std::fs::{File,create_dir_all,remove_dir_all,PathExt,copy};
+    use std::thread;
     
     extern crate toml;
     
@@ -1295,4 +1297,48 @@ mod tests {
         // doesn't really matter which files survived, as long as the count is right
         assert_eq!(syncfiles.len(), orig_count);
      }
+     
+     fn write_text_file(fpath:&str, text:&str) {
+        match File::create(fpath) {
+            Err(e) => panic!("{}", e),
+            Ok(ref mut f) => {
+                f.write_all(text.as_bytes());
+            }
+        };
+     }
+     
+     #[test]
+     fn basic_syncback() {
+        // run a sync on alice, run on bob, chance a file in bob, run on bob, run on alice,
+        // verify alice has the change, verify sync state.
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_syncback");
+        // sync alice
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(bob_mconf, 2, 2);
+        // write a modified file and a new file in bob
+        
+        // on mac the mtime has 1 second resolution, so we have to wait to guarantee that we'll have an 
+        // mtime update.  Otherwise, the sync won't pick up any changes and the verify will fail.  
+        // Ideally we could get a higher resolution mtime, or use a checksum, though checksumming all 
+        // the files in poll mode would be slow.
+        thread::sleep_ms(1000);
+        
+        let mut text_pb = PathBuf::from(&bob_mconf.native_root);
+        text_pb.push("docs");
+        let mut out1 = text_pb.clone();
+        out1.push("test_text_file.txt");
+        write_text_file(out1.to_str().unwrap(), "Some updated text");
+        
+        let mut out2 = text_pb.clone();
+        out2.push("new_text_file.txt");
+        write_text_file(out2.to_str().unwrap(), "Some new text");
+        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(bob_mconf, 3, 3);
+     }
+     
+     // todo: dedup conflict
+     // todo: delete
+     
 }
