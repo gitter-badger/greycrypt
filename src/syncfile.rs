@@ -275,7 +275,7 @@ impl SyncFile {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
         };
-        
+
         let keyword:String = {
             match mdmap.get("kw") {
                 None => return make_err(&format!("Key 'kw' is required in metadata")),
@@ -325,7 +325,7 @@ impl SyncFile {
 
         // :(
         // http://stackoverflow.com/questions/29570607/is-there-a-good-way-to-convert-a-vect-to-an-array
-        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];       
+        let mut iv_copy:[u8;IV_SIZE] = [0;IV_SIZE];
         for i in 0..IV_SIZE {
             iv_copy[i] = iv[i]
         }
@@ -393,7 +393,7 @@ impl SyncFile {
         };
         try!(writeln!(v, "origin_native_mtime: {}", mtime));
         try!(writeln!(v, "origin_host: {}", conf.host_name));
-        
+
         Ok(())
     }
 
@@ -447,7 +447,7 @@ impl SyncFile {
 
         Ok(())
     }
-    
+
     pub fn close(&mut self) {
         self.sync_file_state = SyncFileState::Closed;
     }
@@ -455,21 +455,18 @@ impl SyncFile {
     pub fn decrypt_to_writer(&mut self, conf:&config::SyncConfig, out:&mut Write) -> Result<()> {
         // if file is binary, can go directly to target_out.  otherwise, have to
         // stream to intermediate buffer and nativize the line endings.
-
         if self.is_binary {
             self.decrypt_helper(conf,out)
         } else {
             let mut temp_out:Vec<u8> = Vec::new();
-            
+
             try!(self.decrypt_helper(conf,&mut temp_out));
-            
+
+            let s = String::from_utf8(temp_out).unwrap();
+            let s = util::decanon_lines(&s);
+            let temp_out = s.as_bytes();
             //println!("dec: {:?}", String::from_utf8(temp_out.clone()).unwrap());
-            match util::decanon_lines(&temp_out) {
-                Err(e) => return make_err(&format!("Decanon error: {}", e)),
-                Ok(temp_out) => {
-                    try!(out.write_all(&temp_out)); 
-                }
-            }
+            try!(out.write_all(&temp_out));
 
             Ok(())
         }
@@ -608,7 +605,7 @@ impl SyncFile {
 
         if self.is_binary {
             // stream-encrypt binary files
-            
+
             // use vec to heap alloc the buffer
             const SIZE: usize = 1048576;
             let mut v: Vec<u8> = vec![0;SIZE];
@@ -633,24 +630,11 @@ impl SyncFile {
             // the (decrypted) binary value is same on all platforms.  this is required for de-dup
             // comparisons.  when unpacking to native on a target platform, we'll restore the
             // proper line endings
-            let br = BufReader::new(fin);
-            let in_lines = br.lines();
-            let mut out_lines:Vec<String> = Vec::new();
-            for l in in_lines {
-                match l {
-                    Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
-                    Ok(l) => {
-                        out_lines.push(l.to_owned());
-                    }
-                }
-            }
+            let line_bytes = util::slurp_bin_file(&self.nativefile);
+            let line_str = util::canon_lines(&String::from_utf8(line_bytes).unwrap());
+            let line_bytes = line_str.as_bytes();
 
-            let line_buf = match util::canon_lines(&out_lines) {
-                Err(e) => return make_err(&format!("{}", e)),
-                Ok(buf) => buf
-            };
-
-            let enc_bytes = &line_buf[0 .. line_buf.len()];
+            let enc_bytes = &line_bytes[0 .. line_bytes.len()];
 
             match crypto.encrypt(enc_bytes, true) {
                 Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
@@ -733,7 +717,7 @@ mod tests {
                         for x in 0..syncfile::IV_SIZE {
                             if ofs.iv[x] == 0 { zcount = zcount + 1 }
                         }
-                        assert!(zcount != syncfile::IV_SIZE)                
+                        assert!(zcount != syncfile::IV_SIZE)
                 } else {
                     panic!("Unexpected file state")
                 }

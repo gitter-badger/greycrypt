@@ -99,7 +99,7 @@ pub fn load_toml_file(filename:&str) -> BTreeMap<String, toml::Value> {
                          filename, loline, locol, hiline, hicol, err.desc);
             }
             panic!("");
-        }         
+        }
     };
 
     toml
@@ -112,18 +112,18 @@ pub fn get_hostname() -> String {
         Err(_) => "".to_owned(),
         Ok(v) => v
     };
-    
-    let hostname = 
+
+    let hostname =
         if hostname.trim() == "" {
             // no direct std function for this, as far as I can tell
             let output = Command::new("hostname")
                                  .output()
                                  .unwrap_or_else(|e| { panic!("failed to execute process: {}", e) });
-            String::from_utf8(output.stdout).unwrap().trim().to_owned()    
+            String::from_utf8(output.stdout).unwrap().trim().to_owned()
         } else {
             hostname
         };
-        
+
     hostname
 }
 
@@ -133,63 +133,17 @@ pub fn canon_path(p:&str) -> String {
 }
 
 #[cfg(target_os = "windows")]
-const SEP:&'static str = "\r\n";
-
-#[cfg(not(target_os = "windows"))]
-const SEP:&'static str = "\n";
-
-// TODO: make this the composable with canon_lines once I figure out the Trait/Type issues
-// and make a sane interface.
-pub fn decanon_lines(data:&Vec<u8>) -> Result<Vec<u8>> {
-    let mut out:Vec<u8> = Vec::new();
-    let data = &data[0 .. data.len()];
-
-    // writeln! always appears to write unix-endings, so...
-
-    let br = BufReader::new(data);
-    let in_lines = br.lines();
-    for l in in_lines {
-        match l {
-            Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
-            Ok(l) => {
-                match write!(out,"{}{}",l,SEP) {
-                    Err(e) => return make_err(&format!("Failed to read line from alleged text source: {}", e)),
-                    Ok(_) => ()
-                }
-            }
-        }
-    }
-    Ok(out)
+pub fn decanon_lines(s:&str) -> String {
+    s.replace("\n", "\r\n")
 }
 
-// TODO: would be nice if this could take a Read object, or even a BufReader's Lines object,
-// but I can't figure how to make those work with the type system.
-pub fn canon_lines(lines:&Vec<String>) -> Result<Vec<u8>> {
-    let mut out_buf:Vec<u8> = Vec::new();
+#[cfg(not(target_os = "windows"))]
+pub fn decanon_lines(s:&str) -> String {
+    s
+}
 
-    // TODO: this string handling is abysmal.  #imdoingitwrongihope
-    let trim_end = |chars:&Vec<char>, count:usize| {
-        let mut s = String::new();
-        for i in 0 .. (chars.len() - count) {
-            s.push(chars[i])
-        }
-        s
-    };
-
-    for l in lines {
-        // make sure line doesn't have any terminator residue
-        let chars:Vec<char> = l.chars().collect();
-
-        let l = if l.ends_with("\r\n") { trim_end(&chars,2) } else { l.to_owned() };
-        let l = if l.ends_with("\n") { trim_end(&chars,1) } else { l.to_owned() };
-        let l = if l.ends_with("\r") { trim_end(&chars,1) } else { l.to_owned() };
-
-        match write!(out_buf, "{}\n",l) {
-            Err(e) => return make_err(&format!("Failed to write line string to stream buffer: {}", e)),
-            Ok(_) => ()
-        }
-    }
-    Ok(out_buf)
+pub fn canon_lines(s:&str) -> String {
+    s.replace("\r\n", "\n")
 }
 
 // TODO: should just use serialization
