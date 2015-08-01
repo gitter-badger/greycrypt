@@ -139,7 +139,7 @@ pub fn decanon_lines(s:&str) -> String {
 
 #[cfg(not(target_os = "windows"))]
 pub fn decanon_lines(s:&str) -> String {
-    s
+    s.to_owned()
 }
 
 pub fn canon_lines(s:&str) -> String {
