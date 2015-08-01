@@ -1313,7 +1313,7 @@ mod tests {
      #[test]
      fn basic_syncback() {
         // run a sync on alice, run on bob, chance a file in bob, run on bob, run on alice,
-        // verify alice has the change, verify sync state.
+        // verify sync state on alice
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_syncback");
         // sync alice
         core::do_sync(&mut alice_mconf.state);        
@@ -1339,6 +1339,9 @@ mod tests {
         
         core::do_sync(&mut bob_mconf.state);        
         verify_sync_state(bob_mconf, 3, 3);
+        
+        core::do_sync(&mut alice_mconf.state);
+        verify_sync_state(alice_mconf, 3, 3);
      }
      
      // todo: dedup conflict
