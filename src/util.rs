@@ -10,7 +10,7 @@ use std::os::unix::fs::MetadataExt;
 
 use std::env;
 use std::fs::File;
-use std::io::{Read, BufReader, Write, BufRead,Result};
+use std::io::{Read,BufRead,Result};
 
 use std::fs::{metadata};
 #[cfg(target_os = "windows")]

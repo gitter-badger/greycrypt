@@ -1302,7 +1302,10 @@ mod tests {
         match File::create(fpath) {
             Err(e) => panic!("{}", e),
             Ok(ref mut f) => {
-                f.write_all(text.as_bytes());
+                match f.write_all(text.as_bytes()) {
+                    Err(e) => panic!("{}", e),
+                    Ok(_) => ()
+                }
             }
         };
      }
