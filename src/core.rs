@@ -1020,11 +1020,10 @@ mod tests {
             let wd = env::current_dir().unwrap();
             let mut path = PathBuf::from(&wd);
             path.push("testdata");
-            path.push("out_core");
             if testname.contains("..") {
                 panic!("illegal testname, '..' not allowed: {}", testname);
-            }
-            path.push(testname);        
+            }           
+            path.push(format!("out_core_{}", testname));
             if relpath.contains("..") {
                 panic!("illegal relpath, '..' not allowed: {}", relpath);
             }            
