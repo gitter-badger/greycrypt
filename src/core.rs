@@ -1257,14 +1257,26 @@ mod tests {
 
         (alice_mconf, bob_mconf)
     }
+    
+    fn write_text_file(fpath:&str, text:&str) {
+        match File::create(fpath) {
+            Err(e) => panic!("{}", e),
+            Ok(ref mut f) => {
+                match f.write_all(text.as_bytes()) {
+                    Err(e) => panic!("{}", e),
+                    Ok(_) => ()
+                }
+            }
+        };
+    }    
 
     #[test]
-    fn basic_sync() {
+    fn sync() {
         // run a sync on alice
         // verify sync state for alice (see below)
         // run a sync state for bob
         // verify sync state for bob
-        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_sync");
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("sync");
         // sync alice
         core::do_sync(&mut alice_mconf.state);        
         verify_sync_state(alice_mconf, 2, 2);
@@ -1293,51 +1305,10 @@ mod tests {
      }
      
      #[test]
-     fn basic_dedup() {
-        // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
-        // it should de-dup.  
-        let (ref mut alice_mconf, _) = basic_alice_bob_setup("basic_dedup");
-        core::do_sync(&mut alice_mconf.state);
-        
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
-        let orig_count = syncfiles.len();
-        // lets make a nice dup disaster area in there...
-        let max_iter = 3;
-        for i in 0..max_iter {
-            for syncfile in &syncfiles {
-                let mut dest = String::new();
-                dest.push_str(syncfile);
-                dest.push_str(&format!(".copy{}.dat", i));
-                cp_or_panic(syncfile, &PathBuf::from(dest));
-            }
-        }
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
-        assert_eq!(syncfiles.len(), (max_iter + 1) * orig_count);
-        
-        // run sync again
-        core::do_sync(&mut alice_mconf.state);
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
-        // doesn't really matter which files survived, as long as the count is right
-        assert_eq!(syncfiles.len(), orig_count);
-     }
-     
-     fn write_text_file(fpath:&str, text:&str) {
-        match File::create(fpath) {
-            Err(e) => panic!("{}", e),
-            Ok(ref mut f) => {
-                match f.write_all(text.as_bytes()) {
-                    Err(e) => panic!("{}", e),
-                    Ok(_) => ()
-                }
-            }
-        };
-     }
-     
-     #[test]
-     fn basic_syncback() {
+     fn syncback() {
         // run a sync on alice, run on bob, chance a file in bob, run on bob, run on alice,
         // verify sync state on alice
-        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("basic_syncback");
+        let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("syncback");
         // sync alice
         core::do_sync(&mut alice_mconf.state);        
         core::do_sync(&mut bob_mconf.state);        
@@ -1367,6 +1338,35 @@ mod tests {
         verify_sync_state(alice_mconf, 3, 3);
      }
      
+     #[test]
+     fn dedup() {
+        // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
+        // it should de-dup.  
+        let (ref mut alice_mconf, _) = basic_alice_bob_setup("dedup");
+        core::do_sync(&mut alice_mconf.state);
+        
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        let orig_count = syncfiles.len();
+        // lets make a nice dup disaster area in there...
+        let max_iter = 3;
+        for i in 0..max_iter {
+            for syncfile in &syncfiles {
+                let mut dest = String::new();
+                dest.push_str(syncfile);
+                dest.push_str(&format!(".copy{}.dat", i));
+                cp_or_panic(syncfile, &PathBuf::from(dest));
+            }
+        }
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        assert_eq!(syncfiles.len(), (max_iter + 1) * orig_count);
+        
+        // run sync again
+        core::do_sync(&mut alice_mconf.state);
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        // doesn't really matter which files survived, as long as the count is right
+        assert_eq!(syncfiles.len(), orig_count);
+     }
+                    
      #[test]
      fn dedup_conflict() {
         // run sync on alice and bob, change the same file to different contents on both.
@@ -1413,6 +1413,10 @@ mod tests {
         } 
      }
      
-     // todo: delete
+     #[test]
+     fn delete() {
+     }
      
+     // todo: delete dedup
+     // todo: delete conflict     
 }
