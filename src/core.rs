@@ -69,12 +69,20 @@ impl SyncFileCache {
     }
 }
 
+#[derive(Debug,Clone)]
+pub enum TerminateReason {
+    None,
+    Ok,
+    Conflict(String)
+}
+
 pub struct SyncState {
     pub conf: config::SyncConfig,
     pub syncdb: syncdb::SyncDb,
     pub sync_files_for_id: HashMap<String,Vec<String>>,
     pub sync_file_cache: SyncFileCache,
-    pub log_util: logging::LoggerUtil
+    pub log_util: logging::LoggerUtil,
+    pub terminate_reason: TerminateReason
 }
 
 impl SyncState {
@@ -84,9 +92,19 @@ impl SyncState {
             conf: conf,
             sync_files_for_id: HashMap::new(),
             sync_file_cache: SyncFileCache::new(),
-            log_util: log_util
+            log_util: log_util,
+            terminate_reason: TerminateReason::None
         }
     }  
+    
+    // TODO: I'd prefer to take a mut state here and assign the terminate reason, but that
+    // causes nasty wars with the borrow checker
+    // (since state is usually borrowed already as mut).  There is probably a better way to fix it.
+    // This function is only here for the unit tests anyway, so that they can verify that 
+    // the code is panicking for the right reason.
+    pub fn terminate(reason: &TerminateReason) -> ! {
+        panic!("Abnormal termination: {:?}", reason);
+    }
     
     pub fn is_conflicted(&self,sid:&str) -> bool {
         match self.sync_files_for_id.get(sid) {
@@ -150,8 +168,10 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         match (revguid_changed,native_newer) {
             (true,true) => {
                 // conflict! for now, panic
-                panic!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
+                let msg = format!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
                     sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
+                state.terminate_reason = TerminateReason::Conflict(msg); 
+                SyncState::terminate(&state.terminate_reason);
             },
             (true,false) => {
                 SyncAction::UpdateNativeFile(sd.clone())
@@ -805,6 +825,8 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
 }
 
 pub fn do_sync(state:&mut SyncState) {
+    state.terminate_reason = TerminateReason::None; 
+    
     state.sync_file_cache.flush();
 
     dedup_syncfiles(state);
@@ -950,6 +972,8 @@ pub fn do_sync(state:&mut SyncState) {
             _ => error!("Leftover action in list: {:?} for {:?}", action, sid)
         }
     }
+    
+    state.terminate_reason = TerminateReason::Ok; 
 }
 
 #[cfg(test)]
@@ -1343,7 +1367,52 @@ mod tests {
         verify_sync_state(alice_mconf, 3, 3);
      }
      
-     // todo: dedup conflict
+     #[test]
+     fn dedup_conflict() {
+        // run sync on alice and bob, change the same file to different contents on both.
+        // run a sync again; expect conflict (neither file will be modified)
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("dedup_conflict");
+        // sync
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+        
+        thread::sleep_ms(1000);
+        
+        // write file
+        {
+            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            write_text_file(out1.to_str().unwrap(), "Alice's conflicted text");
+        }
+        {
+            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            write_text_file(out1.to_str().unwrap(), "Bob's conflicted text");
+        }
+        
+        core::do_sync(&mut bob_mconf.state);
+        
+        let result = {
+            thread::catch_panic(move || {
+                core::do_sync(&mut alice_mconf.state); // this will conflict
+            })
+        };
+        
+        match result {
+            Err(_) => {
+                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
+                // But we can't because state had to be moved into the closure.  
+                // Hopefully we terminated for the right reason.
+            }
+            Ok(_) => panic!("Expected panic, none received")
+        } 
+     }
+     
      // todo: delete
      
 }
