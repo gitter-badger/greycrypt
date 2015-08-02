@@ -1014,7 +1014,7 @@ mod tests {
     use std::path::{Path,PathBuf};
     use std::env;
     use std::io::Write;
-    use std::fs::{File,create_dir_all,remove_dir_all,PathExt,copy};
+    use std::fs::{File,create_dir_all,remove_dir_all,PathExt,copy,remove_file};
     use std::thread;
     
     extern crate toml;
@@ -1197,14 +1197,19 @@ mod tests {
         let verify_sync_entry = |syncdb: &mut syncdb::SyncDb, sf: &syncfile::SyncFile| {
             let entry = syncdb.get(sf);
             match entry {
-                None => panic!("Syncdb should have an entry, but has an entry"),
+                None => panic!("Syncdb should have an entry, but has none"),
                 Some(entry) => {
                     assert_eq!(entry.revguid, sf.revguid);
-                    let nmtime = match util::get_file_mtime(&sf.nativefile) {
-                        Err(e) => panic!("Whoa should have an mtime: {}", e),
-                        Ok(nmtime) => nmtime
-                    };                    
-                    assert_eq!(entry.native_mtime, nmtime);
+                    
+                    if sf.is_deleted {
+                        assert_eq!(entry.native_mtime, 0);
+                    } else {
+                        let nmtime = match util::get_file_mtime(&sf.nativefile) {
+                            Err(e) => panic!("Whoa should have an mtime: {}", e),
+                            Ok(nmtime) => nmtime
+                        };                    
+                        assert_eq!(entry.native_mtime, nmtime);                    
+                    }
                 }
             }             
         }; 
@@ -1220,17 +1225,24 @@ mod tests {
             };
 
             let mut data:Vec<u8> = Vec::new();
-
+            
             match sf.decrypt_to_writer(&mconf.state.conf, &mut data) {
                 Err(e) => panic!("Error {:?}", e),
                 Ok(_) => {
+
                     // verify that native file exists and has same contents
                     let nf = PathBuf::from(&sf.nativefile);
-                    assert!(nf.is_file());
-                    // suck it up
-                    let ndata = util::slurp_bin_file(&sf.nativefile);
-                    // verify
-                    assert_eq!(data,ndata);
+                    if sf.is_deleted {
+                        assert!(!nf.is_file());
+                        assert_eq!(data.len(),0);
+                    } else {
+                        //println!("nf: {}", &sf.nativefile);
+                        assert!(nf.is_file());
+                        // suck it up
+                        let ndata = util::slurp_bin_file(&sf.nativefile);
+                        // verify
+                        assert_eq!(data,ndata);                        
+                    }
                 }
             }
             
@@ -1415,6 +1427,35 @@ mod tests {
      
      #[test]
      fn delete() {
+        // run sync on both, delete file on bob, sync on alice, verify that alice deletes the file
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete");
+        // sync
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+        
+        {
+            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            
+            // delete
+            match remove_file(out1.to_str().unwrap()) {
+                Err(e) => panic!("{}", e),
+                Ok(_) => ()
+            }
+            
+            //write_text_file(out1.to_str().unwrap(), "Bob's conflicted text");
+        }
+        
+        core::do_sync(&mut bob_mconf.state);
+        
+        verify_sync_state(&mut bob_mconf, 2, 1);
+        
+        core::do_sync(&mut alice_mconf.state);
+        
+        verify_sync_state(&mut alice_mconf, 2, 1);
      }
      
      // todo: delete dedup
