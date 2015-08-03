@@ -12,6 +12,7 @@ use syncdb;
 use trash;
 use logging;
 
+extern crate uuid;
 extern crate glob;
 
 #[derive(Debug,Clone)]
@@ -583,7 +584,23 @@ fn load_syncfile_or_panic(state:&SyncState,syncpath:&String,data:&mut Vec<u8>) -
     sf
 }
 
-fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<String> {
+// Given a list of sync files, remove all syncfiles whose _contents_ are a duplicate of the 
+// syncfile at the specified index. 
+// Anything before the index is considered a non-dup and is not checked.
+// If curr revguid is supplied, the boolean part of the returned tuple be true if a syncfile that
+// was removed contained that revguid.
+// If there are duplicates, the file with the lowest revguid will be preserved.  This is to guarantee
+// consistent removal across all machines for the same set of files.
+// The returned paths contains any elements up to any including the candidate index, followed by
+// any elements that were not dups of the candidate index.
+// Example:
+// A,B,C,D,C,D,E with dup cand index 2 C returns this path list: 
+// A,B,C,D,D,E
+// The "C" in the returned list will be either the first or second C from the input list, depending 
+// on which one had the lower revguid.
+// The boolean value will be true if the extra "C" that was removed contained the curr revguid.  It will 
+// be false if no such revguid was removed or if the input revguid was None.
+fn dedup_helper(state:&SyncState,dup_cand_idx:usize, curr_revguid: Option<uuid::Uuid>, paths:&Vec<String>) -> (Vec<String>,bool) {
     // partition into dups and non dups
     let mut nondups:Vec<String> = Vec::new();
     let mut dups:Vec<(syncfile::SyncFile,String)> = Vec::new();
@@ -634,6 +651,8 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
     } else {
         paths.insert(dup_cand_idx, candidate.clone());
     }
+    
+    let mut curr_revguid_removed = false;
 
     if !dups.is_empty() {
         // println!("for candidate: {}",candidate);
@@ -641,11 +660,23 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
         // println!(" and remove:");
         for i in 1 .. dups.len() {
             // println!("   {}", dups[i].1);
+            let sf = &dups[i].0;
             let dup = dups[i].1.clone();
 
             let pb = PathBuf::from(&dup);
             let pb_par = pb.parent().unwrap();
             let dname = pb_par.to_str().unwrap();
+            
+            // check to see if we are removing the current revguid
+            match curr_revguid {
+                None => (),
+                Some(revguid) => {
+                    if revguid == sf.revguid {
+                        //println!("removing dup with curr revguid: {:?}", revguid);
+                        curr_revguid_removed = true;
+                    }
+                }
+            }
 
             info!("Removing dup file: {}", dup);
             match remove_file(&dup) {
@@ -668,7 +699,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, paths:&Vec<String>) -> Vec<
         }
     }
 
-    paths.clone()
+    (paths.clone(),curr_revguid_removed)
 }
 
 pub fn dedup_syncfiles(state:&mut SyncState) {
@@ -709,16 +740,28 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             // keep the file with the lowest (numeric) revguid, remove the others.
             // if there are more than one file with the lowest revguid, remove all but one of them.
             //println!("Dup files: {:?}",files);
+            
+            // we also need to keep track of our current revguid (if any) for this sid and whether 
+            // the dedup removes the file containing it; see below for how this is used.
+            
+            // get current revguid (if any)
+            let curr_revguid = state.syncdb.get_by_sid(sid).map(|entry| entry.revguid);
+            
             let mut dup_cand_idx = 0;
             let mut deduped = files.clone();
             // TODO: figure out how to do this with all the nasty copying, while
             // keeping BC happy
+            let mut curr_revguid_removed = false;
             while dup_cand_idx < deduped.len() {
                 // println!("checking dups for: idx: {}: {}", dup_cand_idx, rem_sync_dir_prefix(&deduped[dup_cand_idx]));
                 // for x in &deduped {
                 //     println!("  pot dup: {}", rem_sync_dir_prefix(&x));
                 // }
-                let mut reslist = dedup_helper(&state, dup_cand_idx, &mut deduped);
+                let (mut reslist, c_revguid_removed) = dedup_helper(&state, dup_cand_idx, curr_revguid, &mut deduped);
+                if c_revguid_removed {
+                    curr_revguid_removed = true;
+                }
+                
                 // println!("res:");
                 // for x in &reslist {
                 //     println!("  {}", rem_sync_dir_prefix(&x));
@@ -733,30 +776,50 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
 
             if files.len() == 1 {
                 // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
-                // because the dedup may have changed the active revguid
+                // because the dedup may have changed the active revguid.
+                // HOWEVER, we should only update the syncdb if 
+                // the surviving revguid is our current one (in which case we could actually skip updating the db)
+                // of if our current revguid is in the list of duplicated (removed) revguids.  if our revguid
+                // wasn't removed, then we haven't actually processed this file yet, so we 
+                // shouldn't update the syncdb.
                 let pb = PathBuf::from(&files[0]);
                 let sf = state.sync_file_cache.get(&state.conf,&pb);
-                let (do_update,mtime) = {
-                    match state.syncdb.get(&sf) {
-                        Some(entry) => {
-                            if sf.revguid != entry.revguid {
-                                (true,entry.native_mtime)
-                            } else {
-                                (false,0)
-                            }
-                        },
-                        None => (false,0), // haven't synced it yet, so this is ok
+                    
+                let curr_revguid_equals_survivor = match curr_revguid {
+                    None => false,
+                    Some(revguid) => {
+                        revguid == sf.revguid 
                     }
                 };
-
-                if do_update {
-                    // just reuse the mtime, the sf has the latest revguid already, so just update
-                    match state.syncdb.update(&sf,mtime) {
-                        Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
-                        Ok(_) => {
-                            info!("Changed sync revguid for {}", &files[0]);
+                
+                if !curr_revguid_equals_survivor || !curr_revguid_removed {
+                    // don't update syncdb; we need to process this file
+                    trace!("curr revguid not removed for sid; treating deduped sf as new: {}", sid);
+                } else {
+                    // curr revguid removed, so it must have been one of the dups which means the surviving
+                    // file has already been processed - make sure the syncdb has the updated revguid
+                    let (do_update,mtime) = {
+                        match state.syncdb.get(&sf) {
+                            Some(entry) => {
+                                if sf.revguid != entry.revguid {
+                                    (true,entry.native_mtime)
+                                } else {
+                                    (false,0)
+                                }
+                            },
+                            None => (false,0), // haven't synced it yet, so this is ok
                         }
-                    }
+                    };
+    
+                    if do_update {
+                        // just reuse the mtime, the sf has the latest revguid already, so just update
+                        match state.syncdb.update(&sf,mtime) {
+                            Err(e) => panic!("Failed to update sync db after dedup: {:?}", e),
+                            Ok(_) => {
+                                info!("Changed sync revguid for {}", &files[0]);
+                            }
+                        }
+                    }                
                 }
             } else {
                 warn!("conflicts: {}", sid)
@@ -1350,25 +1413,30 @@ mod tests {
         verify_sync_state(alice_mconf, 3, 3);
      }
      
-     #[test]
-     fn dedup() {
-        // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
-        // it should de-dup.  
-        let (ref mut alice_mconf, _) = basic_alice_bob_setup("dedup");
-        core::do_sync(&mut alice_mconf.state);
-        
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
-        let orig_count = syncfiles.len();
+     fn dup_syncfiles(syncfiles:&Vec<String>, passes:usize) {
         // lets make a nice dup disaster area in there...
-        let max_iter = 3;
-        for i in 0..max_iter {
-            for syncfile in &syncfiles {
+        for i in 0..passes {
+            for syncfile in syncfiles {
                 let mut dest = String::new();
                 dest.push_str(syncfile);
                 dest.push_str(&format!(".copy{}.dat", i));
                 cp_or_panic(syncfile, &PathBuf::from(dest));
             }
         }
+     }
+     
+     #[test]
+     fn dedup() {
+        // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
+        // it should de-dup.  
+        let (ref mut alice_mconf, _) = basic_alice_bob_setup("dedup");
+        core::do_sync(&mut alice_mconf.state);
+
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());        
+        let orig_count = syncfiles.len();
+        
+        let max_iter :usize= 3;        
+        dup_syncfiles(&syncfiles,max_iter);
         let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
         assert_eq!(syncfiles.len(), (max_iter + 1) * orig_count);
         
@@ -1445,8 +1513,6 @@ mod tests {
                 Err(e) => panic!("{}", e),
                 Ok(_) => ()
             }
-            
-            //write_text_file(out1.to_str().unwrap(), "Bob's conflicted text");
         }
         
         core::do_sync(&mut bob_mconf.state);
@@ -1458,6 +1524,51 @@ mod tests {
         verify_sync_state(&mut alice_mconf, 2, 1);
      }
      
-     // todo: delete dedup
+     #[test]
+     fn delete_dedup() {
+        // run sync on both, delete file on bob, sync on alice, verify that alice deletes the file
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_dedup");
+        // sync
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+        
+        {
+            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            
+            // delete
+            match remove_file(out1.to_str().unwrap()) {
+                Err(e) => panic!("{}", e),
+                Ok(_) => ()
+            }
+        }
+        {
+            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            
+            // delete
+            match remove_file(out1.to_str().unwrap()) {
+                Err(e) => panic!("{}", e),
+                Ok(_) => ()
+            }
+        }
+        
+        core::do_sync(&mut bob_mconf.state);
+        
+        verify_sync_state(&mut bob_mconf, 2, 1);
+        
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());        
+        dup_syncfiles(&syncfiles,2);        
+     
+        core::do_sync(&mut alice_mconf.state);
+        
+        verify_sync_state(&mut alice_mconf, 2, 1);
+     }
+     
      // todo: delete conflict     
 }

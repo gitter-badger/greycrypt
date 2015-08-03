@@ -105,17 +105,22 @@ impl SyncDb {
 
         Ok(())
     }
-
+    
+    
     pub fn get(&mut self, sf:&syncfile::SyncFile) -> Option<&SyncEntry> {
+        self.get_by_sid(&sf.id)
+    }
+    
+    pub fn get_by_sid(&mut self, sid: &str) -> Option<&SyncEntry> {
         // can't just get() the key here, because that will introduce an
         // immutable borrow on the map, and we may need to mutate it to add
         // the entry from disk.
-        if self.cache.contains_key(&sf.id) {
-            let res = self.cache.get(&sf.id);
+        if self.cache.contains_key(sid) {
+            let res = self.cache.get(sid);
             return res;
         } else {
             // lookup in fs
-            let storepath = self.get_store_path(&sf.id);
+            let storepath = self.get_store_path(&sid);
 
             if !storepath.is_file() {
                 return None
@@ -141,9 +146,9 @@ impl SyncDb {
                 native_mtime: mtime
             };
 
-            assert!(!self.cache.contains_key(&sf.id));
-            self.cache.insert(sf.id.to_owned(), entry);
-            self.cache.get(&sf.id)
+            assert!(!self.cache.contains_key(sid));
+            self.cache.insert(sid.to_owned(), entry);
+            self.cache.get(sid)
         }
     }
 
