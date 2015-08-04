@@ -168,8 +168,8 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         match (revguid_changed,native_newer) {
             (true,true) => {
                 // conflict! for now, panic
-                let msg = format!("Conflict on {:?}/{:?}; mtime_newer: {}, revguid_changed: {}", nativefile_str,
-                    sd.syncfile.file_name().unwrap(), native_newer, revguid_changed);
+                let msg = format!("Conflict on {:?}/{:?}; both and remote and local files were updated", nativefile_str,
+                    sd.syncfile.file_name().unwrap());
                 state.terminate_reason = TerminateReason::Conflict(msg); 
                 SyncState::terminate(&state.terminate_reason);
             },
@@ -1359,12 +1359,7 @@ mod tests {
     }
     
     #[test]
-    // TODO: should_panic is not granular enough.  we want this test to succeed only if the sync panics,
-    // and really only if it panics because of password mismatch.  Maybe need something like
-    // state.terminate(reason) which panics, but first lets the test get a callback to inspect
-    // the reason. Note, catch_panic also doesn't appear to provide enough information that we can use 
-    // it like this.
-    #[should_panic] 
+    #[should_panic(expected="are you using the correct password")] 
     fn wrong_encryption_key() {
         // run a sync on alice, then try to run a sync on bob with different encryption key.  should panic.
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("wrong_encryption_key");
@@ -1467,6 +1462,7 @@ mod tests {
      }     
                     
      #[test]
+     #[should_panic (expected="both and remote and local files were updated")]
      fn dedup_conflict() {
         // run sync on alice and bob, change the same file to different contents on both.
         // run a sync again; expect conflict (neither file will be modified)
@@ -1483,21 +1479,7 @@ mod tests {
         update_text_file(&&bob_mconf, "Bob's conflicted text");
         
         core::do_sync(&mut bob_mconf.state);
-        
-        let result = {
-            thread::catch_panic(move || {
-                core::do_sync(&mut alice_mconf.state); // this will conflict
-            })
-        };
-        
-        match result {
-            Err(_) => {
-                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
-                // But we can't because state had to be moved into the closure.  
-                // Hopefully we terminated for the right reason.
-            }
-            Ok(_) => panic!("Expected panic, none received")
-        } 
+        core::do_sync(&mut alice_mconf.state); // this will conflict
      }
      
      #[test]
@@ -1542,6 +1524,7 @@ mod tests {
      }
      
      #[test]
+     #[should_panic(expected = "remote deleted, but file updated locally")]
      fn delete_conflict_1() {
         // run sync on both, delete file on bob, write to same file on alice, sync bob, sync alice,
         // expect conflict on alice
@@ -1552,36 +1535,20 @@ mod tests {
         verify_sync_state(&mut bob_mconf, 2, 2);
 
         thread::sleep_ms(1000);
-                
-        //delete_text_file(&alice_mconf);
-        //update_text_file(&bob_mconf, "Awesome updated text");          
-        
+                        
         delete_text_file(&bob_mconf);
         update_text_file(&alice_mconf, "Awesome updated text");
         
         core::do_sync(&mut bob_mconf.state);
                 
-        let result = {
-            thread::catch_panic(move || {
-                core::do_sync(&mut alice_mconf.state); // this will conflict
-            })
-        };
-        
-        match result {
-            Err(_) => {
-                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
-                // But we can't because state had to be moved into the closure.  
-                // Hopefully we terminated for the right reason.
-            }
-            Ok(_) => panic!("Expected panic, none received")
-        }         
+        core::do_sync(&mut alice_mconf.state); // this will conflict                        
      }
      
      #[test]
+     #[should_panic(expected = "remote deleted, but file updated locally")]
      #[ignore] // TODO
      fn delete_conflict_2() {
-        // run sync on both, delete file on bob, write to same file on alice, sync bob, sync alice,
-        // expect conflict on alice
+        // same as delete_conflict_1, but this time alice deletes and bob writes.
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_2");
         // sync
         core::do_sync(&mut alice_mconf.state);        
@@ -1594,20 +1561,6 @@ mod tests {
         update_text_file(&bob_mconf, "Awesome updated text");          
         
         core::do_sync(&mut bob_mconf.state);
-                
-        let result = {
-            thread::catch_panic(move || {
-                core::do_sync(&mut alice_mconf.state); // this will conflict
-            })
-        };
-        
-        match result {
-            Err(_) => {
-                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
-                // But we can't because state had to be moved into the closure.  
-                // Hopefully we terminated for the right reason.
-            }
-            Ok(_) => panic!("Expected panic, none received")
-        }      
+        core::do_sync(&mut alice_mconf.state); // this will conflict      
      }
 }

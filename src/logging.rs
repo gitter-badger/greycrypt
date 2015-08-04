@@ -37,6 +37,10 @@ impl SimpleLogger {
         // else it panics.  This Effs up the tests.  So here 
         // is a crude check that makes sure we init only once.
         // Can init LoggerUtil as much as we want, though.
+        
+        // NOTE: this _still_ sometimes fails because the tests threads don't synchronize
+        // and can thus try to init at the same time.  Probably need some kind of global mutex here -
+        // reuse the process mutex? But really the test framework should allow some kind of one time init.
         if log_enabled!(log::LogLevel::Info) {             
             return Ok(LoggerUtil {
                 warnonce_messages: HashSet::new()

@@ -3,7 +3,6 @@
 
 #![feature(path_ext)]
 #![feature(append)] // for sync dedup, hopefully can remove
-#![feature(catch_panic)]
 
 #[macro_use]
 extern crate log;
