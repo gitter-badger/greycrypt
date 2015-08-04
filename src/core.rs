@@ -1444,6 +1444,27 @@ mod tests {
         // doesn't really matter which files survived, as long as the count is right
         assert_eq!(syncfiles.len(), orig_count);
      }
+     
+     fn delete_text_file(mconf:&MetaConfig) {
+        let mut text_pb = PathBuf::from(&mconf.native_root);
+        text_pb.push("docs");
+        let mut out1 = text_pb.clone();
+        out1.push("test_text_file.txt");
+        
+        // delete
+        match remove_file(out1.to_str().unwrap()) {
+            Err(e) => panic!("{}", e),
+            Ok(_) => ()
+        }     
+     }
+     
+     fn update_text_file(mconf:&MetaConfig,newtext:&str) {
+        let mut text_pb = PathBuf::from(&mconf.native_root);
+        text_pb.push("docs");
+        let mut out1 = text_pb.clone();
+        out1.push("test_text_file.txt");
+        write_text_file(out1.to_str().unwrap(), newtext);     
+     }     
                     
      #[test]
      fn dedup_conflict() {
@@ -1458,20 +1479,8 @@ mod tests {
         thread::sleep_ms(1000);
         
         // write file
-        {
-            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            write_text_file(out1.to_str().unwrap(), "Alice's conflicted text");
-        }
-        {
-            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            write_text_file(out1.to_str().unwrap(), "Bob's conflicted text");
-        }
+        update_text_file(&alice_mconf, "Alice's conflicted text");        
+        update_text_file(&&bob_mconf, "Bob's conflicted text");
         
         core::do_sync(&mut bob_mconf.state);
         
@@ -1500,25 +1509,11 @@ mod tests {
         core::do_sync(&mut bob_mconf.state);        
         verify_sync_state(&mut bob_mconf, 2, 2);
         
-        {
-            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            
-            // delete
-            match remove_file(out1.to_str().unwrap()) {
-                Err(e) => panic!("{}", e),
-                Ok(_) => ()
-            }
-        }
+        delete_text_file(&bob_mconf);
         
         core::do_sync(&mut bob_mconf.state);
-        
-        verify_sync_state(&mut bob_mconf, 2, 1);
-        
+        verify_sync_state(&mut bob_mconf, 2, 1);        
         core::do_sync(&mut alice_mconf.state);
-        
         verify_sync_state(&mut alice_mconf, 2, 1);
      }
      
@@ -1531,30 +1526,8 @@ mod tests {
         core::do_sync(&mut bob_mconf.state);        
         verify_sync_state(&mut bob_mconf, 2, 2);
         
-        {
-            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            
-            // delete
-            match remove_file(out1.to_str().unwrap()) {
-                Err(e) => panic!("{}", e),
-                Ok(_) => ()
-            }
-        }
-        {
-            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            
-            // delete
-            match remove_file(out1.to_str().unwrap()) {
-                Err(e) => panic!("{}", e),
-                Ok(_) => ()
-            }
-        }
+        delete_text_file(&bob_mconf);
+        delete_text_file(&alice_mconf);
         
         core::do_sync(&mut bob_mconf.state);
         
@@ -1569,10 +1542,10 @@ mod tests {
      }
      
      #[test]
-     fn delete_conflict() {
+     fn delete_conflict_1() {
         // run sync on both, delete file on bob, write to same file on alice, sync bob, sync alice,
         // expect conflict on alice
-        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict");
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_1");
         // sync
         core::do_sync(&mut alice_mconf.state);        
         core::do_sync(&mut bob_mconf.state);        
@@ -1580,28 +1553,11 @@ mod tests {
 
         thread::sleep_ms(1000);
                 
-        // delete on bob
-        {
-            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            
-            // delete
-            match remove_file(out1.to_str().unwrap()) {
-                Err(e) => panic!("{}", e),
-                Ok(_) => ()
-            }
-        }
+        //delete_text_file(&alice_mconf);
+        //update_text_file(&bob_mconf, "Awesome updated text");          
         
-        // update on alice
-        {
-            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
-            text_pb.push("docs");
-            let mut out1 = text_pb.clone();
-            out1.push("test_text_file.txt");
-            write_text_file(out1.to_str().unwrap(), "Alice's conflicted text");
-        }                
+        delete_text_file(&bob_mconf);
+        update_text_file(&alice_mconf, "Awesome updated text");
         
         core::do_sync(&mut bob_mconf.state);
                 
@@ -1619,5 +1575,39 @@ mod tests {
             }
             Ok(_) => panic!("Expected panic, none received")
         }         
+     }
+     
+     #[test]
+     #[ignore] // TODO
+     fn delete_conflict_2() {
+        // run sync on both, delete file on bob, write to same file on alice, sync bob, sync alice,
+        // expect conflict on alice
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_2");
+        // sync
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+
+        thread::sleep_ms(1000);
+                
+        delete_text_file(&alice_mconf);
+        update_text_file(&bob_mconf, "Awesome updated text");          
+        
+        core::do_sync(&mut bob_mconf.state);
+                
+        let result = {
+            thread::catch_panic(move || {
+                core::do_sync(&mut alice_mconf.state); // this will conflict
+            })
+        };
+        
+        match result {
+            Err(_) => {
+                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
+                // But we can't because state had to be moved into the closure.  
+                // Hopefully we terminated for the right reason.
+            }
+            Ok(_) => panic!("Expected panic, none received")
+        }      
      }
 }
