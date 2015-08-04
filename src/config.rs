@@ -85,8 +85,6 @@ impl SyncConfig {
             };
             conf
     }
-
-
 }
 
 pub fn def_config_file() -> String {

@@ -1054,10 +1054,10 @@ mod tests {
     // local path directories, otherwise they will step on each another, a situation
     // that is prevented in the real world by the process/syncdir mutexes.  Actually, 
     // even sharing a syncdir doesn't map to the real world, because in the RW
-    // the sync dir is only virtually the same; e.g in google drive, to processes 
+    // the sync dir is only virtually the same; e.g in google drive, two processes 
     // that "simultaneously" (for some definition) write the same file to the directory
     // will cause that system to generate two different files with different names;
-    // (the dreaded Foo (1).txt situation). 
+    // the dreaded Foo (1).txt situation. 
     //
     // But I digress.  Back to directories.  Actually, each _test_ will need to have 
     // its own test-specific directory structure, because the cargo test harness runs them all in 
@@ -1341,7 +1341,28 @@ mod tests {
                 }
             }
         };
-    }    
+    }
+    
+     fn delete_text_file(mconf:&MetaConfig) {
+        let mut text_pb = PathBuf::from(&mconf.native_root);
+        text_pb.push("docs");
+        let mut out1 = text_pb.clone();
+        out1.push("test_text_file.txt");
+        
+        // delete
+        match remove_file(out1.to_str().unwrap()) {
+            Err(e) => panic!("{}", e),
+            Ok(_) => ()
+        }     
+     }
+     
+     fn update_text_file(mconf:&MetaConfig,newtext:&str) {
+        let mut text_pb = PathBuf::from(&mconf.native_root);
+        text_pb.push("docs");
+        let mut out1 = text_pb.clone();
+        out1.push("test_text_file.txt");
+        write_text_file(out1.to_str().unwrap(), newtext);     
+     }           
 
     #[test]
     fn sync() {
@@ -1439,27 +1460,6 @@ mod tests {
         // doesn't really matter which files survived, as long as the count is right
         assert_eq!(syncfiles.len(), orig_count);
      }
-     
-     fn delete_text_file(mconf:&MetaConfig) {
-        let mut text_pb = PathBuf::from(&mconf.native_root);
-        text_pb.push("docs");
-        let mut out1 = text_pb.clone();
-        out1.push("test_text_file.txt");
-        
-        // delete
-        match remove_file(out1.to_str().unwrap()) {
-            Err(e) => panic!("{}", e),
-            Ok(_) => ()
-        }     
-     }
-     
-     fn update_text_file(mconf:&MetaConfig,newtext:&str) {
-        let mut text_pb = PathBuf::from(&mconf.native_root);
-        text_pb.push("docs");
-        let mut out1 = text_pb.clone();
-        out1.push("test_text_file.txt");
-        write_text_file(out1.to_str().unwrap(), newtext);     
-     }     
                     
      #[test]
      #[should_panic (expected="both and remote and local files were updated")]
