@@ -140,32 +140,31 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         Some(entry) => entry
     };
 
-    if sf.is_deleted {
-        let revguid_changed = sf.revguid != sync_entry.revguid;
-
-        if revguid_changed {
-            //  if revguid doesn't match, either
-            //   1) the checksum of our native data matches the checksum of the deleted data, in which case
-            //     we can delete thise file
-            //   2) the checksum doesn't match, in which case, the native file was updated and we
-            //     have a conflict because the incoming SF wants a delete.
-
-            return SyncAction::ProcessSyncfileDelete(sd.clone());
-        } else {
-            //  if the revguid matches, but native mtime is newer than the syncdb mtime
-            // then native has been recreated with new data: update sync file.
-
-            let native_newer = native_mtime > sync_entry.native_mtime; // TODO, always gonna be true if I set mtime to 0 on delete!
-            if native_newer {
+    let revguid_changed = sf.revguid != sync_entry.revguid;
+    let native_newer = native_mtime > sync_entry.native_mtime;
+    
+    if sf.is_deleted {        
+        match (revguid_changed,native_newer) {
+            (true,true) => {
+                // conflict
+                let msg = format!("Conflict on {:?}/{:?}; remote deleted, but file updated locally", nativefile_str, sd.syncfile.file_name().unwrap());
+                state.terminate_reason = TerminateReason::Conflict(msg); 
+                SyncState::terminate(&state.terminate_reason);                    
+            },
+            (true,false) => {
+                // ok to remove
+                return SyncAction::ProcessSyncfileDelete(sd.clone());
+            }
+            (false,true) => {
+                // revguid matches, but native mtime is newer than the syncdb mtime, so
+                // native has been recreated with new data: update sync file.
                 return SyncAction::UpdateSyncfile(sd.clone());
-            } else {
+            },
+            (false,false) => {
                 return SyncAction::Nothing;
             }
         }
     } else {
-        let revguid_changed = sf.revguid != sync_entry.revguid;
-        let native_newer = native_mtime > sync_entry.native_mtime;
-
         match (revguid_changed,native_newer) {
             (true,true) => {
                 // conflict! for now, panic
@@ -454,9 +453,9 @@ fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     // so, here's a dilemma, if the sync file is marked as deleted and we have no syncdb entry for this
     // guy, should we delete the native file?
-    // ideally we'd have a checksum on the data of the native file, so we could compare that
-    // with the checksum at time of deletion, and only delete if it matches.
-    // for now I'm just gonna panic if I detect this case.
+    // I think the safe answer is "no".  The file could be a stale one on this
+    // machine, or it could have been recreated here with new content; either way, since we don't 
+    // have more context information, we can't process it
     let revguid = {
         let sync_entry = match state.syncdb.get(&sf) {
             None => {
@@ -470,7 +469,6 @@ fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     };
 
     // if the revguids are different we can delete the native file
-    // TODO: also check checksum when we have that; if that fails then this is a conflict
     if sf.revguid != revguid {
         // don't mark it as deleted because its already marked as such (and doing so
         // would generate another revguid, causing churn on remote systems)
@@ -1570,5 +1568,56 @@ mod tests {
         verify_sync_state(&mut alice_mconf, 2, 1);
      }
      
-     // todo: delete conflict     
+     #[test]
+     fn delete_conflict() {
+        // run sync on both, delete file on bob, write to same file on alice, sync bob, sync alice,
+        // expect conflict on alice
+        let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict");
+        // sync
+        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+
+        thread::sleep_ms(1000);
+                
+        // delete on bob
+        {
+            let mut text_pb = PathBuf::from(&bob_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            
+            // delete
+            match remove_file(out1.to_str().unwrap()) {
+                Err(e) => panic!("{}", e),
+                Ok(_) => ()
+            }
+        }
+        
+        // update on alice
+        {
+            let mut text_pb = PathBuf::from(&alice_mconf.native_root);
+            text_pb.push("docs");
+            let mut out1 = text_pb.clone();
+            out1.push("test_text_file.txt");
+            write_text_file(out1.to_str().unwrap(), "Alice's conflicted text");
+        }                
+        
+        core::do_sync(&mut bob_mconf.state);
+                
+        let result = {
+            thread::catch_panic(move || {
+                core::do_sync(&mut alice_mconf.state); // this will conflict
+            })
+        };
+        
+        match result {
+            Err(_) => {
+                // TODO: ideally we could inspect the terminate reason to make sure it is Conflict.
+                // But we can't because state had to be moved into the closure.  
+                // Hopefully we terminated for the right reason.
+            }
+            Ok(_) => panic!("Expected panic, none received")
+        }         
+     }
 }
