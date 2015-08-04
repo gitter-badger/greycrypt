@@ -1546,9 +1546,15 @@ mod tests {
      
      #[test]
      #[should_panic(expected = "remote deleted, but file updated locally")]
-     #[ignore] // TODO
+     // TODO: not sure how to fix this.  Its the same as above test,
+     // but opposite order: alice deletes and bob updates.  But since bob syncs his update _first_, 
+     // alice doesn't detect that the file was deleted on her side, and just writes out bob's update.
+     // Ideally alice would detect that she wants 
+     // to delete the file before processing bob's update, then she could notice the conflict.
+     // This is a variant of CompareSyncState, but currently that action requires that the native file
+     // actually _exists_.
+     #[ignore]  
      fn delete_conflict_2() {
-        // same as delete_conflict_1, but this time alice deletes and bob writes.
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_2");
         // sync
         core::do_sync(&mut alice_mconf.state);        
