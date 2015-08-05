@@ -96,17 +96,17 @@ impl SyncState {
             log_util: log_util,
             terminate_reason: TerminateReason::None
         }
-    }  
-    
+    }
+
     // TODO: I'd prefer to take a mut state here and assign the terminate reason, but that
     // causes nasty wars with the borrow checker
     // (since state is usually borrowed already as mut).  There is probably a better way to fix it.
-    // This function is only here for the unit tests anyway, so that they can verify that 
+    // This function is only here for the unit tests anyway, so that they can verify that
     // the code is panicking for the right reason.
     pub fn terminate(reason: &TerminateReason) -> ! {
         panic!("Abnormal termination: {:?}", reason);
     }
-    
+
     pub fn is_conflicted(&self,sid:&str) -> bool {
         match self.sync_files_for_id.get(sid) {
             None => false,
@@ -121,10 +121,25 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         None => panic!("Native file path must be set here"),
         Some (ref pathbuf) => pathbuf
     };
-    let nativefile_str = nativefile.to_str().unwrap();
 
+    let nativefile_str = nativefile.to_str().unwrap();
     let native_mtime = match util::get_file_mtime(&nativefile_str) {
-        Err(e) => panic!("Error getting file mtime: {:?}", e),
+        Err(e) => {
+            if !nativefile.is_file() {
+                // sometimes the native file is already gone.  this happens for instance
+                // on windows, when you create a new text file on windows (created as "New Text File.txt"),
+                // which greycrypt picks up and syncs, then the native file is renamed to something else.
+                // we can't do anything useful in this situation, so just do nothing and let a future sync
+                // handle it.
+                // TODO: if event (non-poll) mode is implemented, the re-check will still need to be handled as a
+                // scheduled event
+
+                warn!("Native file removed, will check again on next sync: {}; (sid: {})", nativefile_str, sd.syncid);
+                return SyncAction::Nothing;
+            } else {
+                panic!("Error getting file mtime on {}: {:?}", nativefile_str, e);
+            }
+        }
         Ok(mtime) => mtime
     };
     let sf = state.sync_file_cache.get(&state.conf,&sd.syncfile);
@@ -142,14 +157,14 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
 
     let revguid_changed = sf.revguid != sync_entry.revguid;
     let native_newer = native_mtime > sync_entry.native_mtime;
-    
-    if sf.is_deleted {        
+
+    if sf.is_deleted {
         match (revguid_changed,native_newer) {
             (true,true) => {
                 // conflict
                 let msg = format!("Conflict on {:?}/{:?}; remote deleted, but file updated locally", nativefile_str, sd.syncfile.file_name().unwrap());
-                state.terminate_reason = TerminateReason::Conflict(msg); 
-                SyncState::terminate(&state.terminate_reason);                    
+                state.terminate_reason = TerminateReason::Conflict(msg);
+                SyncState::terminate(&state.terminate_reason);
             },
             (true,false) => {
                 // ok to remove
@@ -170,7 +185,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
                 // conflict! for now, panic
                 let msg = format!("Conflict on {:?}/{:?}; both and remote and local files were updated", nativefile_str,
                     sd.syncfile.file_name().unwrap());
-                state.terminate_reason = TerminateReason::Conflict(msg); 
+                state.terminate_reason = TerminateReason::Conflict(msg);
                 SyncState::terminate(&state.terminate_reason);
             },
             (true,false) => {
@@ -454,7 +469,7 @@ fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     // so, here's a dilemma, if the sync file is marked as deleted and we have no syncdb entry for this
     // guy, should we delete the native file?
     // I think the safe answer is "no".  The file could be a stale one on this
-    // machine, or it could have been recreated here with new content; either way, since we don't 
+    // machine, or it could have been recreated here with new content; either way, since we don't
     // have more context information, we can't process it
     let revguid = {
         let sync_entry = match state.syncdb.get(&sf) {
@@ -582,8 +597,8 @@ fn load_syncfile_or_panic(state:&SyncState,syncpath:&String,data:&mut Vec<u8>) -
     sf
 }
 
-// Given a list of sync files, remove all syncfiles whose _contents_ are a duplicate of the 
-// syncfile at the specified index. 
+// Given a list of sync files, remove all syncfiles whose _contents_ are a duplicate of the
+// syncfile at the specified index.
 // Anything before the index is considered a non-dup and is not checked.
 // If curr revguid is supplied, the boolean part of the returned tuple be true if a syncfile that
 // was removed contained that revguid.
@@ -592,11 +607,11 @@ fn load_syncfile_or_panic(state:&SyncState,syncpath:&String,data:&mut Vec<u8>) -
 // The returned paths contains any elements up to any including the candidate index, followed by
 // any elements that were not dups of the candidate index.
 // Example:
-// A,B,C,D,C,D,E with dup cand index 2 C returns this path list: 
+// A,B,C,D,C,D,E with dup cand index 2 C returns this path list:
 // A,B,C,D,D,E
-// The "C" in the returned list will be either the first or second C from the input list, depending 
+// The "C" in the returned list will be either the first or second C from the input list, depending
 // on which one had the lower revguid.
-// The boolean value will be true if the extra "C" that was removed contained the curr revguid.  It will 
+// The boolean value will be true if the extra "C" that was removed contained the curr revguid.  It will
 // be false if no such revguid was removed or if the input revguid was None.
 fn dedup_helper(state:&SyncState,dup_cand_idx:usize, curr_revguid: Option<uuid::Uuid>, paths:&Vec<String>) -> (Vec<String>,bool) {
     // partition into dups and non dups
@@ -649,7 +664,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, curr_revguid: Option<uuid::
     } else {
         paths.insert(dup_cand_idx, candidate.clone());
     }
-    
+
     let mut curr_revguid_removed = false;
 
     if !dups.is_empty() {
@@ -664,7 +679,7 @@ fn dedup_helper(state:&SyncState,dup_cand_idx:usize, curr_revguid: Option<uuid::
             let pb = PathBuf::from(&dup);
             let pb_par = pb.parent().unwrap();
             let dname = pb_par.to_str().unwrap();
-            
+
             // check to see if we are removing the current revguid
             match curr_revguid {
                 None => (),
@@ -738,13 +753,13 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             // keep the file with the lowest (numeric) revguid, remove the others.
             // if there are more than one file with the lowest revguid, remove all but one of them.
             //println!("Dup files: {:?}",files);
-            
-            // we also need to keep track of our current revguid (if any) for this sid and whether 
+
+            // we also need to keep track of our current revguid (if any) for this sid and whether
             // the dedup removes the file containing it; see below for how this is used.
-            
+
             // get current revguid (if any)
             let curr_revguid = state.syncdb.get_by_sid(sid).map(|entry| entry.revguid);
-            
+
             let mut dup_cand_idx = 0;
             let mut deduped = files.clone();
             // TODO: figure out how to do this with all the nasty copying, while
@@ -759,7 +774,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                 if c_revguid_removed {
                     curr_revguid_removed = true;
                 }
-                
+
                 // println!("res:");
                 // for x in &reslist {
                 //     println!("  {}", rem_sync_dir_prefix(&x));
@@ -775,21 +790,21 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             if files.len() == 1 {
                 // for any non-conflicting sid (i.e only one file), we need to update the syncdb,
                 // because the dedup may have changed the active revguid.
-                // HOWEVER, we should only update the syncdb if 
+                // HOWEVER, we should only update the syncdb if
                 // the surviving revguid is our current one (in which case we could actually skip updating the db)
                 // of if our current revguid is in the list of duplicated (removed) revguids.  if our revguid
-                // wasn't removed, then we haven't actually processed this file yet, so we 
+                // wasn't removed, then we haven't actually processed this file yet, so we
                 // shouldn't update the syncdb.
                 let pb = PathBuf::from(&files[0]);
                 let sf = state.sync_file_cache.get(&state.conf,&pb);
-                    
+
                 let curr_revguid_equals_survivor = match curr_revguid {
                     None => false,
                     Some(revguid) => {
-                        revguid == sf.revguid 
+                        revguid == sf.revguid
                     }
                 };
-                
+
                 if !curr_revguid_equals_survivor || !curr_revguid_removed {
                     // don't update syncdb; we need to process this file
                     trace!("curr revguid not removed for sid; treating deduped sf as new: {}", sid);
@@ -808,7 +823,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                             None => (false,0), // haven't synced it yet, so this is ok
                         }
                     };
-    
+
                     if do_update {
                         // just reuse the mtime, the sf has the latest revguid already, so just update
                         match state.syncdb.update(&sf,mtime) {
@@ -817,7 +832,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
                                 info!("Changed sync revguid for {}", &files[0]);
                             }
                         }
-                    }                
+                    }
                 }
             } else {
                 warn!("conflicts: {}", sid)
@@ -873,7 +888,7 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
             //println!("np {:?} rp {:?}", nat_relpath, sf.relpath);
             sf.relpath.starts_with(&nat_relpath)
         }) {
-            None => { 
+            None => {
                 state.log_util.warn_once(&format!("Ignoring sync file, path not specified as native on this machine: {} (sid: {})", sf.relpath, sf.id));
                 continue;
             }
@@ -886,8 +901,8 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
 }
 
 pub fn do_sync(state:&mut SyncState) {
-    state.terminate_reason = TerminateReason::None; 
-    
+    state.terminate_reason = TerminateReason::None;
+
     state.sync_file_cache.flush();
 
     dedup_syncfiles(state);
@@ -957,7 +972,7 @@ pub fn do_sync(state:&mut SyncState) {
         let syncfile = {
             match state.sync_files_for_id.get(&sid) {
                 None => {
-                    trace!("name not remapped for native file {}, sid {}", &nf, &sid); 
+                    trace!("name not remapped for native file {}, sid {}", &nf, &sid);
                     syncfile
                 },
                 Some (filelist) => PathBuf::from(&filelist[0])
@@ -1033,34 +1048,34 @@ pub fn do_sync(state:&mut SyncState) {
             _ => error!("Leftover action in list: {:?} for {:?}", action, sid)
         }
     }
-    
-    state.terminate_reason = TerminateReason::Ok; 
+
+    state.terminate_reason = TerminateReason::Ok;
 }
 
 #[cfg(test)]
 mod tests {
     // Ok, here were gonna test ALL of the core sync functionality.
-    // HAHA just kidding.  But we'll get a lot of it.  These are 
+    // HAHA just kidding.  But we'll get a lot of it.  These are
     // integration test rather than a strict unit test.
     // TODO: move these into "tests/" once I figure how to import stuff from the greycrypt crate.
-    
+
     // The basic idea is to create a fake sync situation, with two
     // actors, Alice and Bob, that are both configured to use the same
     // syncdir and similar native paths.  Then we test various perumations of syncing;
     // Create some native files as Alice, run her Sync, run Bob's sync,
-    // does he get them?  Repeat for every interesting test case.  
+    // does he get them?  Repeat for every interesting test case.
     //
     // Alice and Bob share a syncdir, but they must have different syncdbs and
     // local path directories, otherwise they will step on each another, a situation
-    // that is prevented in the real world by the process/syncdir mutexes.  Actually, 
+    // that is prevented in the real world by the process/syncdir mutexes.  Actually,
     // even sharing a syncdir doesn't map to the real world, because in the RW
-    // the sync dir is only virtually the same; e.g in google drive, two processes 
+    // the sync dir is only virtually the same; e.g in google drive, two processes
     // that "simultaneously" (for some definition) write the same file to the directory
     // will cause that system to generate two different files with different names;
-    // the dreaded Foo (1).txt situation. 
+    // the dreaded Foo (1).txt situation.
     //
-    // But I digress.  Back to directories.  Actually, each _test_ will need to have 
-    // its own test-specific directory structure, because the cargo test harness runs them all in 
+    // But I digress.  Back to directories.  Actually, each _test_ will need to have
+    // its own test-specific directory structure, because the cargo test harness runs them all in
     // parallel - which is good, I don't want to be waiting around for the tests.
     // Since all are in parallel, the tests
     // will stomp each other if using same directories.  So we create a directory set
@@ -1068,18 +1083,18 @@ mod tests {
     // can inspect the output directory for that test postmortem.
     //
     // Another way that these tests deviate from the RW is that we run syncs serially,
-    // but in the RW of course, both greycrypt instances and the cloud provider run 
+    // but in the RW of course, both greycrypt instances and the cloud provider run
     // in parallel.  In the future in may be useful to add more coverage for those cases.
 
-    
+
     use std::path::{Path,PathBuf};
     use std::env;
     use std::io::Write;
     use std::fs::{File,create_dir_all,remove_dir_all,PathExt,copy,remove_file};
     use std::thread;
-    
+
     extern crate toml;
-    
+
     use core;
     use config;
     use logging;
@@ -1088,7 +1103,7 @@ mod tests {
     use syncdb;
     use syncfile;
     use util;
-    
+
     struct TestDirectories {
         sync_dir: String,
         alice_syncdb: String,
@@ -1097,23 +1112,23 @@ mod tests {
         bob_native: String
     }
 
-    // Clean out (remove) and recreate directories required for the target test.  
+    // Clean out (remove) and recreate directories required for the target test.
     // This function operates on $wd/testdata/out_core/<testname>_<dirtype> directories
-    // only.  It returns a struct of all the dir names.     
-    fn init_test_directories(testname:&str) -> TestDirectories {   
+    // only.  It returns a struct of all the dir names.
+    fn init_test_directories(testname:&str) -> TestDirectories {
         let recycle_test_dir = |relpath:&str| {
             let wd = env::current_dir().unwrap();
             let mut path = PathBuf::from(&wd);
             path.push("testdata");
             if testname.contains("..") {
                 panic!("illegal testname, '..' not allowed: {}", testname);
-            }           
+            }
             path.push(format!("out_core_{}", testname));
             if relpath.contains("..") {
                 panic!("illegal relpath, '..' not allowed: {}", relpath);
-            }            
+            }
             path.push(relpath);
-            
+
             let path_str = path.to_str().unwrap();
             if path.is_dir() {
                 //println!("would remove {:?}", path);
@@ -1126,19 +1141,19 @@ mod tests {
                 Err(e) => panic!("Failed to create test output directory: {:?}: {:?}", path_str, e),
                 Ok(_) => ()
             }
-            
-            path_str.to_owned()            
+
+            path_str.to_owned()
         };
-        
+
         TestDirectories {
             sync_dir: recycle_test_dir("syncdir.lastrun"),
-            alice_syncdb: recycle_test_dir("syncdb.alice.lastrun"), 
+            alice_syncdb: recycle_test_dir("syncdb.alice.lastrun"),
             alice_native: recycle_test_dir("native.alice.lastrun"),
             bob_syncdb: recycle_test_dir("syncdb.bob.lastrun"),
-            bob_native: recycle_test_dir("native.bob.lastrun") 
+            bob_native: recycle_test_dir("native.bob.lastrun")
         }
     }
-    
+
     // This struct contains a normal sync state, as well as additional data useful for the
     // unit tests.
     //#[derive(Debug)]
@@ -1146,8 +1161,8 @@ mod tests {
         native_root: String,
         state: core::SyncState,
     }
-    
-	fn get_meta_config(native_dir:&str, syncdb_dir:&str, sync_dir:&str, log_util:logging::LoggerUtil) -> MetaConfig {       
+
+	fn get_meta_config(native_dir:&str, syncdb_dir:&str, sync_dir:&str, log_util:logging::LoggerUtil) -> MetaConfig {
         let mapping = format!("home = '{}'", native_dir);
         let mapping = toml::Parser::new(&mapping).parse().unwrap();
         let mapping = mapping::Mapping::new(&mapping).ok().expect("WTF?");
@@ -1161,31 +1176,31 @@ mod tests {
             Some(ek),
             Some(syncdb_dir.to_owned()),
             Vec::new());
-            
+
         let syncdb = match syncdb::SyncDb::new(&conf) {
             Err(e) => panic!("Failed to create syncdb: {:?}", e),
             Ok(sdb) => sdb
         };
-        
+
         let state = core::SyncState::new(conf,syncdb,log_util);
-                      
+
         MetaConfig {
             native_root: native_dir.to_owned(),
             state: state
         }
-    }    
-    
+    }
+
     fn config_alice_and_bob(dirs:&TestDirectories) -> (MetaConfig, MetaConfig) {
         let log_util = match logging::SimpleLogger::init() {
             Err(e) => panic!("Failed to init logger: {}", e),
             Ok(l) => l
         };
-        
+
         let alicec = get_meta_config(&dirs.alice_native, &dirs.alice_syncdb, &dirs.sync_dir, log_util.clone());
         let bobc = get_meta_config(&dirs.bob_native, &dirs.bob_syncdb, &dirs.sync_dir, log_util.clone());
         (alicec,bobc)
     }
-    
+
     fn cp_or_panic(src:&str,dest:&PathBuf) {
         let mut dest = dest.clone();
         let srcpath = PathBuf::from(src);
@@ -1195,10 +1210,10 @@ mod tests {
         //println!("cp: {:?} -> {:?}", srcpath, dest);
         match copy(src,dest.to_str().unwrap()) {
             Err(e) => panic!("Failed to copy test file {} to {:?}: {}", src, dest, e),
-            Ok(_) => () 
-        } 
+            Ok(_) => ()
+        }
     }
-        
+
     fn populate_native(target_native_dir:&str,subdir: Option<&str>) {
         let outpath = {
             let mut outpath = PathBuf::from(target_native_dir);
@@ -1211,11 +1226,11 @@ mod tests {
                 }
             }
         };
-        
+
         cp_or_panic("testdata/test_text_file.txt", &outpath);
-        cp_or_panic("testdata/test_binary.png", &outpath);    
+        cp_or_panic("testdata/test_binary.png", &outpath);
     }
-    
+
     fn add_native_path(mconf: &mut MetaConfig, path: &str) {
         let mut pb = PathBuf::from(&mconf.native_root);
         pb.push(path);
@@ -1226,7 +1241,7 @@ mod tests {
         let mut files:Vec<String> = Vec::new();
         {
             let mut visitor = |pb: &PathBuf| files.push(pb.to_str().unwrap().to_owned());
-    
+
             let dp = Path::new(dir);
             let res = util::visit_dirs(&dp, &mut visitor);
             match res {
@@ -1234,10 +1249,10 @@ mod tests {
                 Err(e) => panic!("failed to scan directory: {}: {}", dir, e),
             }
         }
-        files    
+        files
     }
-    
-    // Verifies that:    
+
+    // Verifies that:
     //  the number of files in the native directory == the number of files in the sync dir
     //  the decrypted contents of each sync file match the contents in the native directory
     //  the revguid for each syncfile matches the revguid in the syncdb
@@ -1247,38 +1262,38 @@ mod tests {
         let syncfiles = find_all_files(mconf.state.conf.sync_dir());
         // verify that the number found == expected
         assert_eq!(syncfiles.len(), expected_syncfiles);
-        
-        // reload the syncdb off disk, so that we can check both the one in state and the 
+
+        // reload the syncdb off disk, so that we can check both the one in state and the
         // one on disk
         let mut disk_syncdb = match syncdb::SyncDb::new(&mconf.state.conf) {
             Err(e) => panic!("Failed to create syncdb: {:?}", e),
             Ok(sdb) => sdb
         };
-        
+
         let verify_sync_entry = |syncdb: &mut syncdb::SyncDb, sf: &syncfile::SyncFile| {
             let entry = syncdb.get(sf);
             match entry {
                 None => panic!("Syncdb should have an entry, but has none"),
                 Some(entry) => {
                     assert_eq!(entry.revguid, sf.revguid);
-                    
+
                     if sf.is_deleted {
                         assert_eq!(entry.native_mtime, 0);
                     } else {
                         let nmtime = match util::get_file_mtime(&sf.nativefile) {
                             Err(e) => panic!("Whoa should have an mtime: {}", e),
                             Ok(nmtime) => nmtime
-                        };                    
-                        assert_eq!(entry.native_mtime, nmtime);                    
+                        };
+                        assert_eq!(entry.native_mtime, nmtime);
                     }
                 }
-            }             
-        }; 
-    
-        // for each syncfile...        
+            }
+        };
+
+        // for each syncfile...
         for syncpath in &syncfiles {
             let syncpath = PathBuf::from(&syncpath);
-            
+
             // decrypt to mem
             let mut sf = match syncfile::SyncFile::from_syncfile(&mconf.state.conf,&syncpath) {
                 Err(e) => panic!("Failed to read syncfile: {:?}", e),
@@ -1286,7 +1301,7 @@ mod tests {
             };
 
             let mut data:Vec<u8> = Vec::new();
-            
+
             match sf.decrypt_to_writer(&mconf.state.conf, &mut data) {
                 Err(e) => panic!("Error {:?}", e),
                 Ok(_) => {
@@ -1302,22 +1317,22 @@ mod tests {
                         // suck it up
                         let ndata = util::slurp_bin_file(&sf.nativefile);
                         // verify
-                        assert_eq!(data,ndata);                        
+                        assert_eq!(data,ndata);
                     }
                 }
             }
-            
+
             // check revguid, mtime
             verify_sync_entry(&mut mconf.state.syncdb, &sf);
-            verify_sync_entry(&mut disk_syncdb, &sf);            
+            verify_sync_entry(&mut disk_syncdb, &sf);
         }
-    
+
         // find all the native files
         let nfiles = find_all_files(&mconf.native_root);
         // verify that the number found == expected
         assert_eq!(nfiles.len(), expected_nativefiles);
     }
-    
+
     fn basic_alice_bob_setup(testname:&str) -> (MetaConfig, MetaConfig) {
         let dirs = init_test_directories(testname);
         let (mut alice_mconf, mut bob_mconf) = config_alice_and_bob(&dirs);
@@ -1326,11 +1341,11 @@ mod tests {
         populate_native(&dirs.alice_native, Some("docs"));
         // map the path in both configs
         add_native_path(&mut alice_mconf, "docs");
-        add_native_path(&mut bob_mconf, "docs");    
+        add_native_path(&mut bob_mconf, "docs");
 
         (alice_mconf, bob_mconf)
     }
-    
+
     fn write_text_file(fpath:&str, text:&str) {
         match File::create(fpath) {
             Err(e) => panic!("{}", e),
@@ -1342,27 +1357,27 @@ mod tests {
             }
         };
     }
-    
+
      fn delete_text_file(mconf:&MetaConfig) {
         let mut text_pb = PathBuf::from(&mconf.native_root);
         text_pb.push("docs");
         let mut out1 = text_pb.clone();
         out1.push("test_text_file.txt");
-        
+
         // delete
         match remove_file(out1.to_str().unwrap()) {
             Err(e) => panic!("{}", e),
             Ok(_) => ()
-        }     
+        }
      }
-     
+
      fn update_text_file(mconf:&MetaConfig,newtext:&str) {
         let mut text_pb = PathBuf::from(&mconf.native_root);
         text_pb.push("docs");
         let mut out1 = text_pb.clone();
         out1.push("test_text_file.txt");
-        write_text_file(out1.to_str().unwrap(), newtext);     
-     }           
+        write_text_file(out1.to_str().unwrap(), newtext);
+     }
 
     #[test]
     fn sync() {
@@ -1372,61 +1387,61 @@ mod tests {
         // verify sync state for bob
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("sync");
         // sync alice
-        core::do_sync(&mut alice_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
         verify_sync_state(alice_mconf, 2, 2);
         // sync bob
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(bob_mconf, 2, 2);
     }
-    
+
     #[test]
-    #[should_panic(expected="are you using the correct password")] 
+    #[should_panic(expected="are you using the correct password")]
     fn wrong_encryption_key() {
         // run a sync on alice, then try to run a sync on bob with different encryption key.  should panic.
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("wrong_encryption_key");
         core::do_sync(&mut alice_mconf.state);
-        
+
         // change bob's password
         let ek: [u8;config::KEY_SIZE] = [1; config::KEY_SIZE];
         bob_mconf.state.conf.encryption_key = Some(ek);
-        
+
         core::do_sync(&mut bob_mconf.state);;
      }
-     
+
      #[test]
      fn syncback() {
         // run a sync on alice, run on bob, chance a file in bob, run on bob, run on alice,
         // verify sync state on alice
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("syncback");
         // sync alice
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(bob_mconf, 2, 2);
         // write a modified file and a new file in bob
-        
-        // on mac the mtime has 1 second resolution, so we have to wait to guarantee that we'll have an 
-        // mtime update.  Otherwise, the sync won't pick up any changes and the verify will fail.  
-        // Ideally we could get a higher resolution mtime, or use a checksum, though checksumming all 
+
+        // on mac the mtime has 1 second resolution, so we have to wait to guarantee that we'll have an
+        // mtime update.  Otherwise, the sync won't pick up any changes and the verify will fail.
+        // Ideally we could get a higher resolution mtime, or use a checksum, though checksumming all
         // the files in poll mode would be slow.
         thread::sleep_ms(1000);
-        
+
         let mut text_pb = PathBuf::from(&bob_mconf.native_root);
         text_pb.push("docs");
         let mut out1 = text_pb.clone();
         out1.push("test_text_file.txt");
         write_text_file(out1.to_str().unwrap(), "Some updated text");
-        
+
         let mut out2 = text_pb.clone();
         out2.push("new_text_file.txt");
         write_text_file(out2.to_str().unwrap(), "Some new text");
-        
-        core::do_sync(&mut bob_mconf.state);        
+
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(bob_mconf, 3, 3);
-        
+
         core::do_sync(&mut alice_mconf.state);
         verify_sync_state(alice_mconf, 3, 3);
      }
-     
+
      fn dup_syncfiles(syncfiles:&Vec<String>, passes:usize) {
         // lets make a nice dup disaster area in there...
         for i in 0..passes {
@@ -1438,29 +1453,29 @@ mod tests {
             }
         }
      }
-     
+
      #[test]
      fn dedup() {
         // run a sync on alice, then replicate a bunch of the sync files and run a sync again.
-        // it should de-dup.  
+        // it should de-dup.
         let (ref mut alice_mconf, _) = basic_alice_bob_setup("dedup");
         core::do_sync(&mut alice_mconf.state);
 
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());        
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
         let orig_count = syncfiles.len();
-        
-        let max_iter :usize= 3;        
+
+        let max_iter :usize= 3;
         dup_syncfiles(&syncfiles,max_iter);
         let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
         assert_eq!(syncfiles.len(), (max_iter + 1) * orig_count);
-        
+
         // run sync again
         core::do_sync(&mut alice_mconf.state);
         let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
         // doesn't really matter which files survived, as long as the count is right
         assert_eq!(syncfiles.len(), orig_count);
      }
-                    
+
      #[test]
      #[should_panic (expected="both and remote and local files were updated")]
      fn dedup_conflict() {
@@ -1468,61 +1483,61 @@ mod tests {
         // run a sync again; expect conflict (neither file will be modified)
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("dedup_conflict");
         // sync
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(&mut bob_mconf, 2, 2);
-        
+
         thread::sleep_ms(1000);
-        
+
         // write file
-        update_text_file(&alice_mconf, "Alice's conflicted text");        
+        update_text_file(&alice_mconf, "Alice's conflicted text");
         update_text_file(&&bob_mconf, "Bob's conflicted text");
-        
+
         core::do_sync(&mut bob_mconf.state);
         core::do_sync(&mut alice_mconf.state); // this will conflict
      }
-     
+
      #[test]
      fn delete() {
         // run sync on both, delete file on bob, sync on alice, verify that alice deletes the file
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete");
         // sync
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
-        verify_sync_state(&mut bob_mconf, 2, 2);
-        
-        delete_text_file(&bob_mconf);
-        
+        core::do_sync(&mut alice_mconf.state);
         core::do_sync(&mut bob_mconf.state);
-        verify_sync_state(&mut bob_mconf, 2, 1);        
+        verify_sync_state(&mut bob_mconf, 2, 2);
+
+        delete_text_file(&bob_mconf);
+
+        core::do_sync(&mut bob_mconf.state);
+        verify_sync_state(&mut bob_mconf, 2, 1);
         core::do_sync(&mut alice_mconf.state);
         verify_sync_state(&mut alice_mconf, 2, 1);
      }
-     
+
      #[test]
      fn delete_dedup() {
         // run sync on both, delete file on bob, sync on alice, verify that alice deletes the file
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_dedup");
         // sync
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(&mut bob_mconf, 2, 2);
-        
+
         delete_text_file(&bob_mconf);
         delete_text_file(&alice_mconf);
-        
+
         core::do_sync(&mut bob_mconf.state);
-        
+
         verify_sync_state(&mut bob_mconf, 2, 1);
-        
-        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());        
-        dup_syncfiles(&syncfiles,2);        
-     
+
+        let syncfiles = find_all_files(alice_mconf.state.conf.sync_dir());
+        dup_syncfiles(&syncfiles,2);
+
         core::do_sync(&mut alice_mconf.state);
-        
+
         verify_sync_state(&mut alice_mconf, 2, 1);
      }
-     
+
      #[test]
      #[should_panic(expected = "remote deleted, but file updated locally")]
      fn delete_conflict_1() {
@@ -1530,43 +1545,43 @@ mod tests {
         // expect conflict on alice
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_1");
         // sync
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(&mut bob_mconf, 2, 2);
 
         thread::sleep_ms(1000);
-                        
+
         delete_text_file(&bob_mconf);
         update_text_file(&alice_mconf, "Awesome updated text");
-        
+
         core::do_sync(&mut bob_mconf.state);
-                
-        core::do_sync(&mut alice_mconf.state); // this will conflict                        
+
+        core::do_sync(&mut alice_mconf.state); // this will conflict
      }
-     
+
      #[test]
      #[should_panic(expected = "remote deleted, but file updated locally")]
      // TODO: not sure how to fix this.  Its the same as above test,
-     // but opposite order: alice deletes and bob updates.  But since bob syncs his update _first_, 
+     // but opposite order: alice deletes and bob updates.  But since bob syncs his update _first_,
      // alice doesn't detect that the file was deleted on her side, and just writes out bob's update.
-     // Ideally alice would detect that she wants 
+     // Ideally alice would detect that she wants
      // to delete the file before processing bob's update, then she could notice the conflict.
      // This is a variant of CompareSyncState, but currently that action requires that the native file
      // actually _exists_.
-     #[ignore]  
+     #[ignore]
      fn delete_conflict_2() {
         let (mut alice_mconf, mut bob_mconf) = basic_alice_bob_setup("delete_conflict_2");
         // sync
-        core::do_sync(&mut alice_mconf.state);        
-        core::do_sync(&mut bob_mconf.state);        
+        core::do_sync(&mut alice_mconf.state);
+        core::do_sync(&mut bob_mconf.state);
         verify_sync_state(&mut bob_mconf, 2, 2);
 
         thread::sleep_ms(1000);
-                
+
         delete_text_file(&alice_mconf);
-        update_text_file(&bob_mconf, "Awesome updated text");          
-        
+        update_text_file(&bob_mconf, "Awesome updated text");
+
         core::do_sync(&mut bob_mconf.state);
-        core::do_sync(&mut alice_mconf.state); // this will conflict      
+        core::do_sync(&mut alice_mconf.state); // this will conflict
      }
 }
