@@ -1,6 +1,6 @@
 [package]
 name = "grey_crypt"
-version = "0.0.1"
+version = "0.1.0"
 authors = [ "John Quigley <jmquigs@gmail.com>" ]
 
 [dependencies]
@@ -14,7 +14,6 @@ glob = "*"
 winapi = "0.1.20"
 rpassword = "0.0.5"
 log = "0.3.1"
-
 clippy = "*"
 nix = "*"
 
