@@ -81,3 +81,5 @@ other systems that are syncing that file will remove it as well.
 GreyCrypt uses the system trash/recycling bin, but its important to 
 remember that this means the unencrypted file will sit in that bin 
 for however long it takes the OS to remove it.  
+* The command line options for conflict resolution are rough and 
+not super useful.
