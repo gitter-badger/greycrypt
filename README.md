@@ -9,6 +9,14 @@ then unpack the files on another machine by running an instance there.
 
 Licensed under the MIT license.
 
+### Source Hosting
+
+This repository is dual-hosted; I keep "master" in sync on both, other 
+branches may diverge.
+
+* https://bitbucket.org/jmquigs/greycrypt
+* https://github.com/jmquigs/greycrypt
+
 ### Building 
 
 A rust nightly build is currently required.  Binary releases are not 
@@ -54,6 +62,7 @@ If any tests fail, use of this program is not recommended.
 Configuration is done by config file.  There are two default files, 
 one for release and one for develop.  The release file is named 
 "config.toml", and the develop file is named "config.dbg.toml".
+
 See "config.sample.toml" for information on how to set up a file.
 
 ### Storage
