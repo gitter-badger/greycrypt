@@ -255,7 +255,7 @@ fn update_sync_file(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     };
     let nativefile_str = nativefile.to_str().unwrap();
 
-    info!("Copying native data in {:?} to {:?}", nativefile_str, sd.syncfile.file_name().unwrap());
+    info!("Copying local data in {:?} to {:?}", nativefile_str, sd.syncfile.file_name().unwrap());
 
     let native_mtime = match util::get_file_mtime(&nativefile_str) {
         Err(e) => panic!("Error getting file mtime: {:?}", e),
@@ -316,7 +316,7 @@ fn check_sync_revguid(state:&mut SyncState,sd:&SyncData) -> SyncAction {
         SyncAction::CreateNewNativeFile(sd.clone())
     } else {
         // local delete
-        info!("Stale syncfile (revguid match), local file was deleted {:?}", &sd.syncid);
+        info!("Local file deleted, removing stale syncfile (relpath: {}, sid: {})", &sf.nativefile, &sd.syncid);
 
         SyncAction::ProcessNativeDelete(sd.clone())
     }
@@ -467,16 +467,16 @@ fn process_syncfile_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     }
 
     // so, here's a dilemma, if the sync file is marked as deleted and we have no syncdb entry for this
-    // guy, should we delete the native file?
+    // guy, should we delete the local file?
     // I think the safe answer is "no".  The file could be a stale one on this
     // machine, or it could have been recreated here with new content; either way, since we don't
     // have more context information, we can't process it
     let revguid = {
         let sync_entry = match state.syncdb.get(&sf) {
             None => {
-                // here we would need to check to see if the native file has the same checksum
+                // here we would need to check to see if the local file has the same checksum
                 // as deleted - actually, maybe we want to check that no matter what
-                panic!("Refusing to delete native file; no syncdb entry exists: {:?}",sf.nativefile);
+                panic!(format!("Refusing to delete local file; no syncdb entry exists.  Please remove or rename the file: {:?} (sid: {})", sf.nativefile, &sd.syncid));
             }
             Some(entry) => entry
         };
@@ -738,7 +738,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
             if !is_ignored(&sf.nativefile) {
                 valid_files.push(sfname.clone());
             } else {
-                info!("Removing syncfile for ignored native file: {:?}", &sf.nativefile);
+                info!("Removing syncfile for ignored local file: {:?}", &sf.nativefile);
                 match remove_file(sfname) {
                     Err(e) => panic!("Failed to remove syncfile: {:?}", e),
                     Ok(_) => ()
@@ -948,7 +948,7 @@ pub fn do_sync(state:&mut SyncState) {
         //println!("native file: {}", nf);
         let (sid,syncfile) = match syncfile::SyncFile::get_sync_id_and_path(&state.conf,&nf) {
             Err(e) => {
-                warn!("Ignoring native file: {}: {}", &nf, &e);
+                warn!("Ignoring local file: {}: {}", &nf, &e);
                 continue
             },
             Ok(pair) => pair
@@ -961,7 +961,7 @@ pub fn do_sync(state:&mut SyncState) {
         // if its conflicted, skip
         if state.is_conflicted(&sid) {
             let cflicts = state.sync_files_for_id.get(&sid).unwrap();
-            warn!("Skipping conflicted native file: {}:", nf);
+            warn!("Skipping conflicted local file: {}:", nf);
             for c in cflicts {
                 warn!("   {  }", c);
             }
@@ -972,7 +972,7 @@ pub fn do_sync(state:&mut SyncState) {
         let syncfile = {
             match state.sync_files_for_id.get(&sid) {
                 None => {
-                    trace!("name not remapped for native file {}, sid {}", &nf, &sid);
+                    trace!("name not remapped for local file {}, sid {}", &nf, &sid);
                     syncfile
                 },
                 Some (filelist) => PathBuf::from(&filelist[0])
