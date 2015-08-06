@@ -85,7 +85,7 @@ impl Mapping {
                             }
                             if relpath.is_empty() {
                                 panic!("Empty relpath for path: {}", nativefile);
-                            }                            
+                            }
                             res = Some((kw,relpath));
                             break;
                         }
@@ -102,7 +102,7 @@ impl Mapping {
 mod tests {
     use config;
     use testlib;
-              
+
     fn test_kw_to_dir(config:&config::SyncConfig, kw: &str, expected: &str) {
         let expect = format!("No {} key", kw);
         assert_eq!(config.mapping.keyword_to_dir.get(kw).expect(&expect), expected);
@@ -111,21 +111,28 @@ mod tests {
         let expect = format!("No {} key", dir);
         assert_eq!(config.mapping.dir_to_keyword.get(dir).expect(&expect), expected);
     }
-    
-    #[test]
-    #[cfg(not(target_os = "windows"))]
-    fn parse_mapping() {
-        let config = testlib::util::get_test_config();
-        
-        assert_eq!(config.mapping.dir_to_keyword.len(), 1);
-        assert_eq!(config.mapping.keyword_to_dir.len(), 1);
 
+    #[cfg(not(target_os = "windows"))]
+    fn check_parsed_mapping(config: &config::SyncConfig) {
         test_kw_to_dir(&config, "HOME", "/Users/john");
         test_dir_to_kw(&config, "/USERS/JOHN", "HOME");
         assert_eq!(config.mapping.dir_to_keyword.get("/Users/john"), None); // canon paths are upcase
-        //assert_eq!(config.mapping.keyword_to_dir.get("HOME").expect("No HOME key"), "C:\\Users\\John");
-        //assert_eq!(config.mapping.dir_to_keyword.get("C:\\USERS\\JOHN").expect("No dir key"), "HOME");
-        //assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None);
+    }
+
+    #[cfg(target_os = "windows")]
+    fn check_parsed_mapping(config: &config::SyncConfig) {
+        test_kw_to_dir(&config, "HOME", "C:\\Users\\John");
+        test_dir_to_kw(&config, "C:\\USERS\\JOHN", "HOME");
+        assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None); // canon paths are upcase
+    }
+    #[test]
+    fn parse_mapping_check() {
+        let config = testlib::util::get_test_config();
+
+        assert_eq!(config.mapping.dir_to_keyword.len(), 1);
+        assert_eq!(config.mapping.keyword_to_dir.len(), 1);
+
+        check_parsed_mapping(&config);
     }
 
     fn test_kw_relpath(config:&config::SyncConfig, srcpath:&str, ex_kw:&str,ex_relpath:&str) {
@@ -139,9 +146,9 @@ mod tests {
         }
     }
 
-    // unfortunately I need unix and windows variants of these tests, because PathBuf, which I use 
+    // unfortunately I need unix and windows variants of these tests, because PathBuf, which I use
     // extensively, cannot parse paths that aren't native to the platform.
-    
+
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn get_kw_relpath() {
@@ -151,12 +158,12 @@ mod tests {
         let res = config.mapping.get_kw_relpath("/Users/Fred/Documents/GreyCryptTestSrc/Another file.txt");
         assert_eq!(res,None);
     }
-    
+
     //"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt"
     //"HOME"
     // "/Documents/GreyCryptTestSrc/Another file.txt"
-    
+
     //"C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt"
-    
-    
+
+
 }

@@ -141,7 +141,7 @@ fn pw_prompt() -> String {
 // anything wrong with the file.
 // Note: maybe should change this to return a Result instead of panicking,
 // but the use of helper closures here makes it more convenient to just panic.
-pub fn parse(cfgfile:Option<String>) -> SyncConfig {
+pub fn parse(cfgfile:Option<String>, hn_override:Option<String>) -> SyncConfig {
     let file = match cfgfile {
         None => def_config_file(),
         Some(f) => f
@@ -186,9 +186,15 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
     // load config
     let gen_sect = get_optional_section("General");
 
-    let hn = gen_sect
-        .and_then(|s| get_optional_string("HostnameOverride", s))
-        .unwrap_or_else(util::get_hostname);
+    // set host name:
+    // fn argument has highest priority (unit tests hardcode it),
+    // then config file,
+    // then raw host name
+    let hn = hn_override.unwrap_or_else(|| {
+            gen_sect
+            .and_then(|s| get_optional_string("HostnameOverride", s))
+            .unwrap_or_else(util::get_hostname)
+    });
 
     // in debug, allow password to be read from conf file
     let password = if IS_REL {

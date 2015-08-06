@@ -3,23 +3,23 @@ pub mod util {
     use std::env;
     use std::path::{PathBuf};
     use std::fs::{PathExt,remove_dir_all};
-    
+
     extern crate toml;
-    
+
 	use config;
     use mapping;
     use util;
-	
+
 	#[cfg(target_os = "windows")]
 	pub fn unit_test_hostname() -> String {
 		"WinUnitTestHost".to_owned()
 	}
-	
+
 	#[cfg(target_os = "macos")]
 	pub fn unit_test_hostname() -> String {
 		"MacUnitTestHost".to_owned()
 	}
-    
+
     pub fn clear_test_syncdb(conf:&config::SyncConfig) {
         // if the previous test sync db exists, clear it out
         // TODO: should break this out into test lib function for reuse
@@ -38,9 +38,9 @@ pub mod util {
                     Ok(_) => ()
                 }
             }
-        }    
+        }
     }
-	
+
 	pub fn get_mock_config() -> config::SyncConfig {
         let wd = env::current_dir().unwrap();
 
@@ -53,10 +53,10 @@ pub mod util {
         let mut outpath = PathBuf::from(&wd);
         outpath.push("testdata");
         outpath.push("out_syncdir");
-        
+
         let mut syncdb_dir = PathBuf::from(&wd);
         syncdb_dir.push("testdata");
-        syncdb_dir.push("out_syncdb");           
+        syncdb_dir.push("out_syncdb");
 
         let ek: [u8;config::KEY_SIZE] = [0; config::KEY_SIZE];
 
@@ -69,21 +69,14 @@ pub mod util {
             Vec::new());
         conf
     }
-    
+
     pub fn get_test_config() -> config::SyncConfig {
         let wd = env::current_dir().unwrap();
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
         syncpath.push("test_config.toml");
         let config_file = syncpath.to_str().unwrap().to_owned();
-        let config = config::parse(Some(config_file));
-        config::SyncConfig::new(
-            config.sync_dir().to_owned(),
-            unit_test_hostname(),
-            config.mapping,
-            config.encryption_key,
-            config.syncdb_dir,
-            config.native_paths
-        )    
+        let config = config::parse(Some(config_file),Some(unit_test_hostname()));
+        config
     }
 }

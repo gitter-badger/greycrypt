@@ -35,12 +35,12 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn main() {   
+fn main() {
     let log_util = match logging::SimpleLogger::init() {
         Err(e) => panic!("Failed to init logger: {}", e),
         Ok(l) => l
     };
-    
+
     // parse command line
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
@@ -65,21 +65,21 @@ fn main() {
                 None => return print_usage(&program,opts),
                 Some (i) => {
                     info!("Using configuration file: {}", i);
-                    Some (i.to_owned()) 
+                    Some (i.to_owned())
                 }
-            }                
+            }
         } else {
             None
         }
-    }; 
-    
+    };
+
     // init conf and state
-    let conf = config::parse(cfile);
+    let conf = config::parse(cfile,None);
     let syncdb = match syncdb::SyncDb::new(&conf) {
         Err(e) => panic!("Failed to create syncdb: {:?}", e),
         Ok(sdb) => sdb
     };
-    
+
     let mutex = match process_mutex::acquire(conf.sync_dir()) {
         Err(e) => panic!("Failed to create process mutex: {}", e),
         Ok(f) => f
@@ -88,7 +88,7 @@ fn main() {
 
     let mut state = core::SyncState::new(conf,syncdb,log_util);
 
-    let poll_interval = 
+    let poll_interval =
         if matches.opt_present("t") {
             match matches.opt_str("t") {
                 None => return print_usage(&program,opts),
@@ -100,7 +100,7 @@ fn main() {
         } else {
             3
         };
-    
+
     // process args
     if matches.opt_present("s") {
         // inspect syncfile
@@ -120,10 +120,10 @@ fn main() {
         // run standard sync in loop
         info!("Starting");
         info!("Poll interval: {} seconds", poll_interval);
-        
-        loop {    
+
+        loop {
             core::do_sync(&mut state);
             thread::sleep_ms(poll_interval * 1000);
-        }  
+        }
     }
 }
