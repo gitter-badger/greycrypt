@@ -31,6 +31,8 @@ struct SHFILEOPSTRUCTW {
 #[cfg(target_os = "windows")]
 #[link(name = "shell32")]
 extern "stdcall" {
+    // TODO: compiler "improper_ctypes" warning about a "zero size struct" here; what does it mean?
+    // it ain't zero size.
     fn SHFileOperationW(lp_file_op: *mut SHFILEOPSTRUCTW) -> i32;
 }
 
@@ -134,7 +136,7 @@ mod tests {
     }
 
     #[cfg(target_os = "windows")]
-    pub fn get_trash_path(f:&PathBuf) -> PathBuf {
+    pub fn get_trash_path(_:&PathBuf) -> PathBuf {
         // not easily possible on windows, since the RB isn't a real folder
         //PathBuf::new()
         panic!("I can't do that, Dave");
