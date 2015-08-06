@@ -45,9 +45,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
-    opts.optopt("s", "", "show syncfile metadata", "NAME");
-    opts.optopt("t", "", "set poll interval (in seconds)", "POLLINT");
-    opts.optflag("c", "", "show syncfile metadata for all conflicted files");
+    opts.optopt("s", "", "show syncfile metadata", "SYNC_FILE_PATH");
+    opts.optopt("t", "", "set poll interval (in seconds)", "POLL_INTERVAL");
+    opts.optflag("x", "", "show syncfile metadata for all conflicted files");
+    opts.optopt("c", "", "use a different configuration file", "CONFIG_FILE_PATH");
     opts.optflag("h", "help", "print this help menu");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
@@ -58,8 +59,22 @@ fn main() {
         return;
     }
 
+    let cfile = {
+        if matches.opt_present("c") {
+            match matches.opt_str("c") {
+                None => return print_usage(&program,opts),
+                Some (i) => {
+                    info!("Using configuration file: {}", i);
+                    Some (i.to_owned()) 
+                }
+            }                
+        } else {
+            None
+        }
+    }; 
+    
     // init conf and state
-    let conf = config::parse(None);
+    let conf = config::parse(cfile);
     let syncdb = match syncdb::SyncDb::new(&conf) {
         Err(e) => panic!("Failed to create syncdb: {:?}", e),
         Ok(sdb) => sdb
@@ -97,7 +112,7 @@ fn main() {
 
         }
     }
-    else if matches.opt_present("c") {
+    else if matches.opt_present("x") {
         state.sync_files_for_id = core::find_all_syncfiles(&mut state);
         commands::show_conflicted_syncfile_meta(&mut state);
     }
