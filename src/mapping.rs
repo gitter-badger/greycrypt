@@ -112,6 +112,9 @@ mod tests {
         assert_eq!(config.mapping.dir_to_keyword.get(dir).expect(&expect), expected);
     }
 
+    // unfortunately I need unix and windows variants of these tests, because PathBuf, which I use
+    // extensively, cannot parse paths that aren't native to the platform.
+
     #[cfg(not(target_os = "windows"))]
     fn check_parsed_mapping(config: &config::SyncConfig) {
         test_kw_to_dir(&config, "HOME", "/Users/john");
@@ -126,7 +129,7 @@ mod tests {
         assert_eq!(config.mapping.dir_to_keyword.get("C:\\Users\\John"), None); // canon paths are upcase
     }
     #[test]
-    fn parse_mapping_check() {
+    fn parse_mapping() {
         let config = testlib::util::get_test_config();
 
         assert_eq!(config.mapping.dir_to_keyword.len(), 1);
@@ -146,24 +149,25 @@ mod tests {
         }
     }
 
-    // unfortunately I need unix and windows variants of these tests, because PathBuf, which I use
-    // extensively, cannot parse paths that aren't native to the platform.
-
-    #[test]
     #[cfg(not(target_os = "windows"))]
-    fn get_kw_relpath() {
-        let config = testlib::util::get_test_config();
+    fn check_kw_relpath(config:&config::SyncConfig) {
         test_kw_relpath(&config, "/Users/john/Documents/GreyCryptTestSrc/Another file.txt", "HOME", "/Documents/GreyCryptTestSrc/Another file.txt");
 
         let res = config.mapping.get_kw_relpath("/Users/Fred/Documents/GreyCryptTestSrc/Another file.txt");
         assert_eq!(res,None);
     }
 
-    //"C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt"
-    //"HOME"
-    // "/Documents/GreyCryptTestSrc/Another file.txt"
+    #[cfg(target_os = "windows")]
+    fn check_kw_relpath(config:&config::SyncConfig) {
+        test_kw_relpath(&config, "C:\\Users\\John\\Documents\\GreyCryptTestSrc\\Another file.txt", "HOME", "/Documents/GreyCryptTestSrc/Another file.txt");
 
-    //"C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt"
+        let res = config.mapping.get_kw_relpath("C:\\Users\\Fred\\Documents\\GreyCryptTestSrc\\Another file.txt");
+        assert_eq!(res,None);
+    }
 
-
+    #[test]
+    fn get_kw_relpath() {
+        let config = testlib::util::get_test_config();
+        check_kw_relpath(&config);
+    }
 }
