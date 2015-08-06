@@ -14,7 +14,7 @@ glob = "*"
 winapi = "0.1.20"
 rpassword = "0.0.5"
 log = "0.3.1"
-clippy = "*"
+#clippy = "*"
 nix = "*"
 
 # until this is fixed, use this branch: 
@@ -23,8 +23,8 @@ nix = "*"
 git = "https://github.com/andreasots/rust-crypto.git"
 branch = "volatile-asm"
 
-#[dependencies.clippy]
-#git = "https://github.com/Manishearth/rust-clippy"
+[dependencies.clippy]
+git = "https://github.com/Manishearth/rust-clippy"
 
 [features]
 release_paths = []
