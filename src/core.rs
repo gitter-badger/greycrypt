@@ -982,10 +982,10 @@ pub fn do_sync(state:&mut SyncState) {
         let np = Some(PathBuf::from(&nf));
         let sd = SyncData { syncid: sid.to_string(), syncfile: syncfile.clone(), nativefile: np };
         if syncfile.is_file() {
-            //println!("css for nf: {}: {}", nf, sid);
+            trace!("Action: CompareSyncState for nativefile '{:?}' and syncfile '{:?}'", nf, syncfile);
             actions.insert(sid.to_string(), SyncAction::CompareSyncState(sd));
         } else {
-            //println!("usf for nf: {}: {}", nf, sid);
+            trace!("Action: UpdateSyncFile for nativefile '{:?}' and syncfile '{:?}'", nf, syncfile);
             actions.insert(sid.to_string(), SyncAction::UpdateSyncfile(sd));
         }
     }

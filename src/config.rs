@@ -35,10 +35,10 @@ impl fmt::Debug for SyncConfig {
             None => "missing",
             Some(_) => "present (value suppressed)"
         };
-        
-        write!(f, "SyncConfig {{ sync_dir: {:?}, host_name: {:?}, mapping: {:?}, encryption_key: {}, syncdb_dir: {:?}, native_paths: {:?} }}", 
+
+        write!(f, "SyncConfig {{ sync_dir: {:?}, host_name: {:?}, mapping: {:?}, encryption_key: {}, syncdb_dir: {:?}, native_paths: {:?} }}",
             self.sync_dir,
-            self.host_name, 
+            self.host_name,
             self.mapping,
             ek_str,
             self.syncdb_dir,
@@ -137,7 +137,7 @@ fn pw_prompt() -> String {
 }
 
 // Parse the specified toml config file.  If None, parse file named by
-// def_config_file() in the working directory.  Panics if there is 
+// def_config_file() in the working directory.  Panics if there is
 // anything wrong with the file.
 // Note: maybe should change this to return a Result instead of panicking,
 // but the use of helper closures here makes it more convenient to just panic.
@@ -179,7 +179,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             match s.as_str() {
                 None => panic!("{} must be a string", setting),
                 Some(name) => name.trim().to_owned()
-            }        
+            }
         })
     };
 
@@ -254,7 +254,7 @@ pub fn parse(cfgfile:Option<String>) -> SyncConfig {
             Some (sd) => {
                 let pp = PathBuf::from(&sd);
                 if !pp.is_dir() {
-                    println!("Warning: sync directory does not exist: {}", sd);
+                    warn!("Warning: sync directory does not exist: {}", sd);
                 }
                 sd.to_owned()
             }
