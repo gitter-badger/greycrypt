@@ -9,7 +9,7 @@ dependencies = [
  "nix 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.3.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "rpassword 0.0.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "rust-crypto 0.2.31 (git+https://github.com/andreasots/rust-crypto.git?branch=volatile-asm)",
+ "rust-crypto 0.2.31 (git+https://github.com/jmquigs/rust-crypto)",
  "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "toml 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.1.17 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -97,7 +97,7 @@ dependencies = [
 [[package]]
 name = "rust-crypto"
 version = "0.2.31"
-source = "git+https://github.com/andreasots/rust-crypto.git?branch=volatile-asm#65723b4c5a1cd829dd2890686bf4a02e1d387e14"
+source = "git+https://github.com/jmquigs/rust-crypto#b4aa28bef4619d20436e109ff16f91395d287be8"
 dependencies = [
  "gcc 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",

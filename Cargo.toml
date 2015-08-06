@@ -20,8 +20,7 @@ nix = "*"
 # until this is fixed, use this branch: 
 # https://github.com/DaGenix/rust-crypto/issues/305
 [dependencies.rust-crypto]
-git = "https://github.com/andreasots/rust-crypto.git"
-branch = "volatile-asm"
+git = "https://github.com/jmquigs/rust-crypto"
 
 [dependencies.clippy]
 git = "https://github.com/Manishearth/rust-clippy"
