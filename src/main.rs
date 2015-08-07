@@ -36,24 +36,34 @@ fn print_usage(program: &str, opts: Options) {
 }
 
 fn main() {
-    let log_util = match logging::SimpleLogger::init() {
-        Err(e) => panic!("Failed to init logger: {}", e),
-        Ok(l) => l
-    };
-
     // parse command line
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
     opts.optopt("s", "", "show syncfile metadata", "SYNC_FILE_PATH");
     opts.optopt("t", "", "set poll interval (in seconds)", "POLL_INTERVAL");
-    opts.optflag("x", "", "show syncfile metadata for all conflicted files");
     opts.optopt("c", "", "use a different configuration file", "CONFIG_FILE_PATH");
+    opts.optflag("x", "", "show syncfile metadata for all conflicted files");
+    opts.optflag("v", "", "use verbose logging");
     opts.optflag("h", "help", "print this help menu");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
         Err(f) => { panic!(f.to_string()) }
     };
+    
+    let log_util = {
+        let level = 
+            if matches.opt_present("v") {
+                Some(log::LogLevelFilter::Trace)
+            } else { 
+                None // use default
+            };
+        match logging::init(level) {
+            Err(e) => panic!("Failed to init logger: {}", e),
+            Ok(l) => l
+        }                   
+    };
+        
     if matches.opt_present("h") {
         print_usage(&program, opts);
         return;

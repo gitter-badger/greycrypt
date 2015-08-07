@@ -1191,7 +1191,7 @@ mod tests {
     }
 
     fn config_alice_and_bob(dirs:&TestDirectories) -> (MetaConfig, MetaConfig) {
-        let log_util = match logging::SimpleLogger::init() {
+        let log_util = match logging::init(None) {
             Err(e) => panic!("Failed to init logger: {}", e),
             Ok(l) => l
         };
