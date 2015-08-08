@@ -45,6 +45,7 @@ fn main() {
     opts.optopt("c", "", "use a different configuration file", "CONFIG_FILE_PATH");
     opts.optflag("x", "", "show syncfile metadata for all conflicted files");
     opts.optflag("v", "", "use verbose logging");
+    opts.optflag("p", "", "change encryption password");
     opts.optflag("h", "help", "print this help menu");
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => { m }
@@ -82,9 +83,13 @@ fn main() {
             None
         }
     };
+    
+    let changing_password = matches.opt_present("p");
+    let pw_prompt_message = if changing_password { Some("Enter old password:") } else { None };
+    let hn_override = None;
 
     // init conf and state
-    let conf = config::parse(cfile,None);
+    let conf = config::parse(cfile,hn_override,pw_prompt_message);
     let syncdb = match syncdb::SyncDb::new(&conf) {
         Err(e) => panic!("Failed to create syncdb: {:?}", e),
         Ok(sdb) => sdb
@@ -121,6 +126,9 @@ fn main() {
             }
 
         }
+    } 
+    else if changing_password {
+        commands::change_password(&mut state);
     }
     else if matches.opt_present("x") {
         state.sync_files_for_id = core::find_all_syncfiles(&mut state);

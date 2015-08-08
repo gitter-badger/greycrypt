@@ -76,7 +76,7 @@ pub mod util {
         syncpath.push("testdata");
         syncpath.push("test_config.toml");
         let config_file = syncpath.to_str().unwrap().to_owned();
-        let config = config::parse(Some(config_file),Some(unit_test_hostname()));
+        let config = config::parse(Some(config_file),Some(unit_test_hostname()), None);
         config
     }
 }

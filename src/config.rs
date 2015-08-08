@@ -21,7 +21,7 @@ use rpassword::read_password;
 pub const KEY_SIZE: usize = 32;
 
 pub struct SyncConfig {
-    sync_dir: String,
+    sync_dir: String, // use sync_dir() to read this
     pub host_name: String,
     pub mapping: mapping::Mapping,
     pub encryption_key: Option<[u8; KEY_SIZE]>,
@@ -114,9 +114,9 @@ fn is_msys() -> bool {
     }
 }
 
-fn pw_prompt(pw_prompt_message:Option<String>) -> String {
+pub fn pw_prompt(pw_prompt_message:Option<&str>) -> String {
     let msg = match pw_prompt_message {
-        None => "Enter encryption password:".to_owned(),
+        None => "Enter encryption password:",
         Some(msg) => msg
     }; 
     println!("{}",msg);
@@ -143,9 +143,12 @@ fn pw_prompt(pw_prompt_message:Option<String>) -> String {
 // Parse the specified toml config file.  If None, parse file named by
 // def_config_file() in the working directory.  Panics if there is
 // anything wrong with the file.
+// Will prompt for encryption password if it cannot be read from the config 
+// file (release mode).
+
 // Note: maybe should change this to return a Result instead of panicking,
 // but the use of helper closures here makes it more convenient to just panic.
-pub fn parse(cfgfile:Option<String>, hn_override:Option<String>) -> SyncConfig {
+pub fn parse(cfgfile:Option<String>, hn_override:Option<String>, pw_prompt_message:Option<&str>) -> SyncConfig {
     let file = match cfgfile {
         None => def_config_file(),
         Some(f) => f
@@ -202,11 +205,11 @@ pub fn parse(cfgfile:Option<String>, hn_override:Option<String>) -> SyncConfig {
 
     // in debug, allow password to be read from conf file
     let password = if IS_REL {
-        pw_prompt(None)
+        pw_prompt(pw_prompt_message)
     } else {
         gen_sect
         .and_then(|s| get_optional_string("Password", s))
-        .unwrap_or_else(|| pw_prompt(None))
+        .unwrap_or_else(|| pw_prompt(pw_prompt_message))
     };
 
     let (sync_dir, native_paths, mapping) = {

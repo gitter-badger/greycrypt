@@ -4,6 +4,7 @@ use std::path::{PathBuf};
 // use std::collections::HashMap;
 // use std::cmp::Ordering;
 
+use config;
 use syncfile;
 use core;
 
@@ -74,5 +75,35 @@ pub fn show_conflicted_syncfile_meta(state: &mut core::SyncState) {
         println!("Conflicted file: {}", f);
         show_syncfile_meta(state, &f);
         println!("");
+    }
+}
+
+#[cfg(not(test))]
+fn collect_new_password() -> String {
+    let new = config::pw_prompt(Some("Enter new password:"));
+    let new2 = config::pw_prompt(Some("Confirm new password:"));
+    
+    if new != new2 {
+        panic!("New passwords do not match");
+    }
+    new
+}
+
+#[cfg(test)]
+fn collect_new_password() -> String {
+    "swordfish".to_owned()
+}
+
+pub fn change_password(state: &mut core::SyncState) {
+    //collect_new_password();
+}
+
+#[cfg(test)]
+mod tests {
+    use testlib;
+
+    #[test]
+    fn change_password() {
+        super::collect_new_password();
     }
 }
