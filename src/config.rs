@@ -222,12 +222,15 @@ pub fn parse(cfgfile:Option<String>, hn_override:Option<String>, pw_prompt_messa
     });
 
     // in debug, allow password to be read from conf file
-    let password = if IS_REL {
-        pw_prompt(pw_prompt_message)
-    } else {
-        gen_sect
-        .and_then(|s| get_optional_string("Password", s))
-        .unwrap_or_else(|| pw_prompt(pw_prompt_message))
+    let ek = {
+        let password = if IS_REL {
+            pw_prompt(pw_prompt_message)
+        } else {
+            gen_sect
+            .and_then(|s| get_optional_string("Password", s))
+            .unwrap_or_else(|| pw_prompt(pw_prompt_message))
+        };
+        get_encryption_key(&password)
     };
 
     let (sync_dir, native_paths, mapping) = {
@@ -330,8 +333,6 @@ pub fn parse(cfgfile:Option<String>, hn_override:Option<String>, pw_prompt_messa
 
         (sync_dir, native_paths, mapping)
     };
-
-    let ek = get_encryption_key(&password);
 
     let c = SyncConfig::new(
         sync_dir,
