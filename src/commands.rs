@@ -50,6 +50,8 @@ pub fn show_syncfile_meta(state: &mut core::SyncState, filename:&str) {
             if !sf.is_binary {
                 println!("text:");
                 println!("{}", String::from_utf8(data).unwrap());
+            } else {
+                println!("binary file data omitted");
             }
         }
     }
