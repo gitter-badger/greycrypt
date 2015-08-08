@@ -95,15 +95,61 @@ fn collect_new_password() -> String {
 }
 
 pub fn change_password(state: &mut core::SyncState) {
-    //collect_new_password();
+    let new_password = collect_new_password();
+    
+    let new_conf = state.conf.with_encryption_key(Some(config::get_encryption_key(&new_password))); 
+    
+    let syncfiles = core::find_all_syncfiles(state);
+    
+    for (_,files) in syncfiles.iter() {
+        for f in files.iter() {
+            // try to decode with new pw
+            let syncfile = PathBuf::from(&f);
+            let mut sf = match syncfile::SyncFile::from_syncfile(&new_conf,&syncfile) {
+                Ok(sf) => continue, // already updated
+                Err(_) => {
+                    // try old pw
+                    match syncfile::SyncFile::from_syncfile(&state.conf,&syncfile) {
+                        Err(e) => {
+                            // fail, log and skip
+                            warn!("Failed to decode syncfile with old & new password, skipping: {}; error: {}", f, e);
+                            continue;
+                        },
+                        Ok(sf) => sf
+                    }
+                }
+            };
+            
+            let mut data:Vec<u8> = Vec::new();
+
+            match sf.decrypt_to_writer(&state.conf, &mut data) {
+                Err(e) => panic!("Error decrypting file data for {}: {:?}", f, e),
+                Ok(_) => {
+                    // TODO re-encrypt with new data (requires new syncfile function)
+    
+    
+                }
+            }
+            
+        }
+    }
+    
+    // TODO: update state with new conf and return   
 }
 
 #[cfg(test)]
 mod tests {
-    use testlib;
-
+    use core;
+    use testlib::util::{basic_alice_bob_setup,verify_sync_state};
+    
     #[test]
     fn change_password() {
-        super::collect_new_password();
+        let (ref mut alice_mconf, _) = basic_alice_bob_setup("commands_change_password");
+        
+        // sync alice
+        core::do_sync(&mut alice_mconf.state);
+        verify_sync_state(alice_mconf, 2, 2);
+        
+        super::change_password(&mut alice_mconf.state);
     }
 }
