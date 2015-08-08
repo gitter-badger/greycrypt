@@ -114,8 +114,12 @@ fn is_msys() -> bool {
     }
 }
 
-fn pw_prompt() -> String {
-    println!("Enter encryption password:");
+fn pw_prompt(pw_prompt_message:Option<String>) -> String {
+    let msg = match pw_prompt_message {
+        None => "Enter encryption password:".to_owned(),
+        Some(msg) => msg
+    }; 
+    println!("{}",msg);
 
     let password =
         if is_cygwin() || is_msys() {
@@ -198,11 +202,11 @@ pub fn parse(cfgfile:Option<String>, hn_override:Option<String>) -> SyncConfig {
 
     // in debug, allow password to be read from conf file
     let password = if IS_REL {
-        pw_prompt()
+        pw_prompt(None)
     } else {
         gen_sect
         .and_then(|s| get_optional_string("Password", s))
-        .unwrap_or_else(pw_prompt)
+        .unwrap_or_else(|| pw_prompt(None))
     };
 
     let (sync_dir, native_paths, mapping) = {
