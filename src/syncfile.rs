@@ -221,11 +221,28 @@ impl SyncFile {
         };
 
         let md = match crypto.decrypt(&md,true) {
-            Err(e) => return make_err(&format!("Failed to decrypt meta data: {:?}; are you using the correct password?", e)),
+            Err(e) => return make_err(&format!("Failed to decrypt meta data; are you using the correct password? Error: {:?}", e)),
             Ok(md) => md
         };
-        let md = String::from_utf8(md).unwrap();
-        let md:Vec<&str> = md.lines().collect();
+        
+        // decryption can fail without error if the key is wrong, in which case the metadata will be garbage.
+        // use the marker to do a secondary check for failure.
+        // TODO: maybe merge version into marker
+        let marker_bytes = "DEADBEEF".as_bytes();
+        const MARKER_SIZE:usize = 8;
+        let mut input_marker:[u8;MARKER_SIZE] = [0;MARKER_SIZE];
+        for i in 0..MARKER_SIZE {
+            input_marker[i] = md[i];
+        }
+        if marker_bytes != input_marker {
+            return make_err(&format!("Failed to read metadata marker; are you using the correct password?"));
+        } 
+        
+        let md = match String::from_utf8(md) {
+            Err(e) => return make_err(&format!("Failed to unpack utf8 metadata string: {:?}", e)),
+            Ok(md) => md
+        };
+        let md:Vec<&str> = md.lines().skip(1).collect(); // drop marker line
 
         // first line should be version, check that
         {
@@ -373,6 +390,7 @@ impl SyncFile {
 
     fn pack_metadata(&self, conf:&config::SyncConfig, v:&mut Vec<u8>) -> io::Result<()> {
         let md_format_ver = 1;
+        try!(writeln!(v, "DEADBEEF"));
         try!(writeln!(v, "ver: {}", md_format_ver));
         try!(writeln!(v, "kw: {}", self.keyword));
         try!(writeln!(v, "relpath: {}", self.relpath));
@@ -631,7 +649,10 @@ impl SyncFile {
             // comparisons.  when unpacking to native on a target platform, we'll restore the
             // proper line endings
             let line_bytes = util::slurp_bin_file(&self.nativefile);
-            let line_str = util::canon_lines(&String::from_utf8(line_bytes).unwrap());
+            let line_str = match String::from_utf8(line_bytes) {
+                Err(e) => return make_err(&format!("Failed to read alleged text file: {}; Error: {}", &self.nativefile, e)),
+                Ok(ref l) => util::canon_lines(l)
+            };
             let line_bytes = line_str.as_bytes();
 
             let enc_bytes = &line_bytes[0 .. line_bytes.len()];
@@ -650,6 +671,7 @@ impl SyncFile {
         let sf = match res {
             Err(e) => return make_err(&format!("Failed to create sync file: {:?}", e)),
             Ok(sf) => sf
+            
         };
 
         let res = sf.read_native_and_save(&conf, override_path);
@@ -825,7 +847,7 @@ mod tests {
 
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
-        syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+        syncpath.push("d759e740d8ecef87b9aa331b1e5edc3aeed133d51347beed735a802253b775b5.dat");
 
         let mut sf = match syncfile::SyncFile::from_syncfile(&conf,&syncpath) {
             Err(e) => panic!("Failed to read syncfile: {:?}", e),
@@ -867,7 +889,7 @@ mod tests {
         let mut sf = {
             let mut syncpath = PathBuf::from(&wd);
             syncpath.push("testdata");
-            syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+            syncpath.push("d759e740d8ecef87b9aa331b1e5edc3aeed133d51347beed735a802253b775b5.dat");
 
             readit(syncpath)
         };
@@ -876,7 +898,7 @@ mod tests {
         let mut syncpath = PathBuf::from(&wd);
         syncpath.push("testdata");
         syncpath.push("out_scratch");
-        syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+        syncpath.push("d759e740d8ecef87b9aa331b1e5edc3aeed133d51347beed735a802253b775b5.dat");
 
         match sf.mark_deleted_and_save(&conf,Some(syncpath.clone())) {
             Err(e) => panic!("Failed to write syncfile: {:?}", e),
