@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
 use std::fs::{PathExt};
-use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek,Result};
+use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek, Result, Cursor};
 use std::io;
 use util::make_err;
 
@@ -604,8 +604,8 @@ impl SyncFile {
         };
         Ok(outname)
     }
-
-    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
+    
+    fn save<T: Read>(&self, conf:&config::SyncConfig, input_data: &mut BufReader<T>, override_path: Option<PathBuf>) -> Result<String> {
         let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
             Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
@@ -614,13 +614,7 @@ impl SyncFile {
 
         // remake crypto helper for file data
         let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
-
-        // read, encrypt, and write file data, not slurping because it could be big
-        let mut fin = match File::open(&self.nativefile) {
-            Err(e) => return make_err(&format!("Can't open input native file: {}: {}", &self.nativefile, e)),
-            Ok(fin) => fin
-        };
-
+        
         if self.is_binary {
             // stream-encrypt binary files
 
@@ -630,7 +624,7 @@ impl SyncFile {
             let mut buf = &mut v;
 
             loop {
-                let num_read = try!(fin.read(buf));
+                let num_read = try!(input_data.read(buf));
                 let enc_bytes = &buf[0 .. num_read];
                 let eof = num_read == 0;
                 let res = crypto.encrypt(enc_bytes, eof);
@@ -648,11 +642,13 @@ impl SyncFile {
             // the (decrypted) binary value is same on all platforms.  this is required for de-dup
             // comparisons.  when unpacking to native on a target platform, we'll restore the
             // proper line endings
-            let line_bytes = util::slurp_bin_file(&self.nativefile);
+            let mut line_bytes:Vec<u8> = Vec::new();
+            try!(input_data.read_to_end(&mut line_bytes));
             let line_str = match String::from_utf8(line_bytes) {
                 Err(e) => return make_err(&format!("Failed to read alleged text file: {}; Error: {}", &self.nativefile, e)),
                 Ok(ref l) => util::canon_lines(l)
             };
+
             let line_bytes = line_str.as_bytes();
 
             let enc_bytes = &line_bytes[0 .. line_bytes.len()];
@@ -663,7 +659,24 @@ impl SyncFile {
             }
         }
 
-        Ok(outname.to_owned())
+        Ok(outname.to_owned())            
+    }
+
+    pub fn read_native_and_save(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
+        let fin = match File::open(&self.nativefile) {
+            Err(e) => return make_err(&format!("Can't open input native file: {}: {}", &self.nativefile, e)),
+            Ok(fin) => fin
+        };
+        
+        let mut br = BufReader::new(fin);
+        
+        self.save(conf,&mut br,override_path)
+    }
+    
+    pub fn save_with_data(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>, data: Vec<u8>) -> Result<String> {
+        let cursor = Cursor::new(data);
+        let mut br = BufReader::new(cursor);
+        self.save(conf,&mut br,override_path)
     }
 
     pub fn create_syncfile(conf:&config::SyncConfig, nativepath:&PathBuf, override_path: Option<PathBuf>) -> Result<(String,SyncFile)> {
