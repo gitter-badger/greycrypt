@@ -8,8 +8,7 @@ use std::io;
 use std::io::BufRead;
 
 extern crate crypto;
-use self::crypto::sha2::Sha256;
-use self::crypto::digest::Digest;
+use self::crypto::bcrypt_pbkdf::bcrypt_pbkdf;
 
 extern crate toml;
 
@@ -147,14 +146,13 @@ pub fn pw_prompt(pw_prompt_message:Option<&str>) -> String {
 }
 
 pub fn get_encryption_key(password:&str) -> [u8;KEY_SIZE] {
-    let mut hasher = Sha256::new();
-    hasher.input_str(&password); // TODO: maybe apply salt, but, we only keep it in memory...
-    if (hasher.output_bits() / 8) != KEY_SIZE {
-        panic!("Password hash produced too many bits; got {}, only want {}", hasher.output_bits(), KEY_SIZE*8);
-    }
-
+    // TODO: what should this salt be, where to store it, does it need to be protected?
+    // perhaps generate it once and store it in syncdir?
+    let salt = b"salt".to_vec();
+    let pw_bytes = password.as_bytes();  
+    
     let mut ek: [u8;KEY_SIZE] = [0; KEY_SIZE];
-    hasher.result(&mut ek);
+    bcrypt_pbkdf(pw_bytes, &salt, 5, &mut ek);
     ek    
 }
 
