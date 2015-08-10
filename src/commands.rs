@@ -107,7 +107,7 @@ pub fn change_password(state: &mut core::SyncState) {
             // try to decode with new pw
             let syncfile = PathBuf::from(&f);
             let mut sf = match syncfile::SyncFile::from_syncfile(&new_conf,&syncfile) {
-                Ok(sf) => continue, // already updated
+                Ok(_) => continue, // already updated
                 Err(_) => {
                     // try old pw
                     match syncfile::SyncFile::from_syncfile(&state.conf,&syncfile) {
