@@ -276,7 +276,7 @@ mod tests {
         {
             let mut syncpath = PathBuf::from(&wd);
             syncpath.push("testdata");
-            syncpath.push("6539709be17615dbbf5d55f84f293c55ecc50abf4865374c916bef052e713fec.dat");
+            syncpath.push("d759e740d8ecef87b9aa331b1e5edc3aeed133d51347beed735a802253b775b5.dat");
             let path = syncpath.to_str().unwrap();
 
             match util::file_is_binary(&path) {
