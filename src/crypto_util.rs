@@ -1,13 +1,54 @@
-extern crate crypto;
+use std::iter::repeat;
 
+extern crate crypto;
 use self::crypto::{ symmetriccipher, buffer, aes, blockmodes };
 use self::crypto::buffer::{ ReadBuffer, WriteBuffer, BufferResult };
+use self::crypto::sha2::Sha256;
+use self::crypto::hmac::Hmac;
+use self::crypto::mac::Mac;
+
+extern crate rand;
+use self::rand::{ Rng, OsRng, Isaac64Rng, SeedableRng, random};
+
+pub const IV_SIZE: usize = 16;
 
 pub struct CryptoHelper {
     encryptor: Box<crypto::symmetriccipher::Encryptor>,
     got_eof_on_encrypt: bool,
     decryptor: Box<crypto::symmetriccipher::Decryptor>,
     got_eof_on_decrypt: bool
+}
+
+pub fn get_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut hmac = Hmac::new(Sha256::new(), &key);
+    hmac.input(data);
+    let mut hmac_raw: Vec<u8> = repeat(0).take(hmac.output_bytes()).collect();
+    hmac.raw_result(&mut hmac_raw);
+    hmac_raw
+}
+
+pub fn get_iv() -> [u8; IV_SIZE] {
+    // Use a combination of OsRng and 
+    // Isaac to fill the IV in case the OS rng has been backdoored 
+    // (I'm looking at you, CryptGenRandom)
+    // ...this is probably needlessly paranoid, but hopefully not insecure  // TODO: needs crypto review
+    let mut issac_rng = Isaac64Rng::new_unseeded();
+    let mut os_rng = OsRng::new().ok().unwrap();
+    
+    let issac_seed: &[_] = &[rand::random::<u64>(), rand::random::<u64>(), os_rng.next_u64(), os_rng.next_u64()];
+    issac_rng.reseed(issac_seed);
+    
+    let mut iv: [u8; IV_SIZE] = [0; IV_SIZE];
+    {
+        let mut first = &mut iv[0 .. IV_SIZE/2];
+        os_rng.fill_bytes(first);
+    }
+    {
+        let mut second = &mut iv[IV_SIZE/2 .. IV_SIZE];
+        issac_rng.fill_bytes(second);
+    }
+    //println!("{:?}", iv);
+    iv    
 }
 
 impl CryptoHelper {
