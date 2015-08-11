@@ -8,6 +8,7 @@ use config;
 use crypto_util;
 
 use std::str::FromStr;
+use std::iter::repeat;
 use std::collections::HashMap;
 use std::path::{PathBuf};
 use std::fs::{File,create_dir_all};
@@ -18,7 +19,8 @@ use util::make_err;
 
 use self::crypto::digest::Digest;
 use self::crypto::sha2::Sha256;
-
+use self::crypto::hmac::Hmac;
+use self::crypto::mac::Mac;
 use self::rand::{ Rng, OsRng };
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
@@ -41,6 +43,14 @@ pub struct SyncFile {
     pub is_binary: bool,
     pub is_deleted: bool,
     sync_file_state: SyncFileState
+}
+
+fn get_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut hmac = Hmac::new(Sha256::new(), &key);
+    hmac.input(data);
+    let mut hmac_raw: Vec<u8> = repeat(0).take(hmac.output_bytes()).collect();
+    hmac.raw_result(&mut hmac_raw);
+    hmac_raw
 }
 
 impl SyncFile {
