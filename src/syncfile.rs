@@ -19,6 +19,7 @@ use util::make_err;
 
 use self::crypto::sha2::Sha256;
 use self::crypto::digest::Digest;
+use self::crypto::mac::{Mac,MacResult};
 use self::rustc_serialize::base64::{ToBase64, STANDARD, FromBase64 };
 
 struct OpenFileState {
@@ -38,6 +39,12 @@ pub struct SyncFile {
     pub is_binary: bool,
     pub is_deleted: bool,
     sync_file_state: SyncFileState
+}
+
+fn get_dummy_hmac() -> String {
+    let dummy_hmac:[u8;32] = [0;32];
+    let dummy_hmac = dummy_hmac.to_base64(STANDARD);
+    dummy_hmac    
 }
 
 impl SyncFile {
@@ -143,20 +150,62 @@ impl SyncFile {
         Ok(lines)
     }
 
-    pub fn get_syncid_from_file(syncpath:&PathBuf) -> Result<String> {
+    pub fn get_syncid_from_file(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<String> {
         if !syncpath.is_file() {
             return make_err(&format!("Syncfile does not exist: {:?}", syncpath));
-        }
+        }    
+        let key = match conf.encryption_key {
+            None => return make_err(&"No encryption key".to_owned()),
+            Some(k) => k
+        };
+
         let fin = match File::open(syncpath.to_str().unwrap()) {
             Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
-        match SyncFile::read_top_lines(&fin,1) {
-            Err(e) => return Err(e),
-            Ok(lines) => {
-                Ok(lines[0].to_owned())
-            }
+
+        let (syncid,_,_,_) = try!(SyncFile::read_and_verify_header(&fin, key));
+        Ok(syncid)
+    }
+    
+    fn verify_header_hmac(key: [u8;config::KEY_SIZE], header_hmac:&str, header_lines:&Vec<&String>) -> Result<()> {
+        // dump the lines into a buffer and verify the hmac
+        let mut buf:Vec<u8> = Vec::new();
+        for l in header_lines {
+            try!(writeln!(buf, "{}", l)); // TODO header newline
         }
+        
+        let hmac_bytes = match header_hmac.from_base64() {
+            Err(e) => return make_err(&format!("Failed to extract header hmac: error {:?}", e)),
+            Ok(d) => d        
+        };
+        
+        let mut computed_hmac = crypto_util::get_hmac(&key, &buf);
+        let expected_hmac = MacResult::new(&hmac_bytes); 
+        
+        if computed_hmac.result() != expected_hmac {
+            make_err(&format!("Header hmac does not equal expected value"))
+        } else {
+            Ok(())
+        }
+    }
+    
+    // Returns header lines:
+    // (syncid,ivline,mdline,cipher_hmac)
+    fn read_and_verify_header(fin:&File, key: [u8;config::KEY_SIZE]) -> 
+        Result<(String,String,String,String)> {
+        let lines = try!( SyncFile::read_top_lines(&fin,5) );
+        let header_hmac = lines[0].clone();
+        let header_lines:Vec<&String> = lines.iter().skip(1).collect(); 
+        
+        try!(SyncFile::verify_header_hmac(key, &header_hmac, &header_lines));
+                
+        // if any lines are empty, its an error
+        if lines.iter().any(|l| l.trim() == "") {
+            return make_err(&format!("Found empty line in syncfile header, file is invalid, may need to be removed"));
+        }    
+    
+        Ok((lines[1].to_owned(), lines[2].to_owned(), lines[3].to_owned(), lines[4].to_owned()))
     }
 
     fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>)> {
@@ -169,11 +218,8 @@ impl SyncFile {
             return make_err(&format!("Syncfile does not exist: {:?}", syncpath));
         }
 
-        // read first n lines:
-        // syncid
-        // iv
-        // metadata
-        // use IV, to initialize crypto helper
+        // read first n header lines
+        // use IV to initialize crypto helper
         // use base64/helper to unpack/decrypt second line which is metadata
         // set fields from metadata
         // leave file handle open for later decryption of content data
@@ -182,20 +228,10 @@ impl SyncFile {
             Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(fin) => fin
         };
-
-        let (syncid,ivline,mdline) = {
-            match SyncFile::read_top_lines(&fin,3) {
-                Err(e) => return Err(e),
-                Ok(lines) => {
-                    // if any are empty, its an error
-                    for l in &lines {
-                        if l.trim() == "" {
-                            return make_err(&format!("Found empty line in syncfile, file is invalid: {:?}; may need to be removed", syncpath))
-                        }
-                    }
-                    (lines[0].clone(), lines[1].clone(), lines[2].clone())
-                }
-            }
+        
+        let (syncid,ivline,mdline,cipher_hmac) = match SyncFile::read_and_verify_header(&fin, key) {
+            Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
+            Ok(stuff) => stuff
         };
 
         let iv = match ivline.from_base64() {
@@ -225,6 +261,7 @@ impl SyncFile {
         // decryption can fail without error if the key is wrong, in which case the metadata will be garbage.
         // use the marker to do a secondary check for failure.
         // TODO: maybe merge version into marker
+        // TODO2: this is probably redundant now that I have the hmac?
         let marker_bytes = "DEADBEEF".as_bytes();
         const MARKER_SIZE:usize = 8;
         let mut input_marker:[u8;MARKER_SIZE] = [0;MARKER_SIZE];
@@ -525,10 +562,8 @@ impl SyncFile {
 
         Ok(outpath.to_owned())
     }
-
-    fn write_syncfile_header(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) ->
-    // Ret (outpath,outhandle,iv,key)
-    Result<(String,File,[u8;IV_SIZE],[u8;config::KEY_SIZE])> {
+    
+    fn open_output_syncfile(&self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<(String,String,File)> {
         let (sid,outpath) = match SyncFile::get_sync_id_and_path(conf,&self.nativefile) {
             Err(e) => return make_err(&format!("Can't get id/path: {:?}", e)),
             Ok(pair) => pair
@@ -549,63 +584,108 @@ impl SyncFile {
         }
 
         let outname = outpath.to_str().unwrap();
-        let mut fout = match File::create(outname) {
+        let fout = match File::create(outname) {
             Err(e) => return make_err(&format!("Can't create output file: {:?}", e)),
             Ok(f) => f
-        };
-
+        };    
+        
+        Ok((sid.to_owned(),outname.to_owned(),fout))
+    }
+    
+    fn get_iv_and_key(&self, conf:&config::SyncConfig) -> Result<([u8;IV_SIZE],[u8;config::KEY_SIZE])> {
         let key = match conf.encryption_key {
             None => return make_err(&format!("No encryption key")),
             Some(k) => k
         };
-
+            
         // create random iv
         let iv = crypto_util::get_iv();
-
+        
+        Ok((iv,key))
+    }
+        
+    fn write_syncfile_header<T: Write>(&self, conf:&config::SyncConfig, sid:&str, key: [u8;config::KEY_SIZE], iv: [u8;IV_SIZE], out: &mut T) -> Result<(())> {
         // make crypto helper
         let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
 
         // write sync id to file (unencrypted)
-        try!(writeln!(fout, "{}", sid));
+        try!(writeln!(out, "{}", sid));
+        
         // write iv to file (unencrypted, base64 encoded)
-        try!(writeln!(fout, "{}", iv.to_base64(STANDARD)));
+        try!(writeln!(out, "{}", iv.to_base64(STANDARD)));
         // write metadata (encrypted, base64 encoded string)
         let mut v:Vec<u8> = Vec::new();
         try!(self.pack_metadata(conf, &mut v));
         // pass true to indicate EOF so that the metadata can be decrypted without needing to read
         // the whole file.
-        let res = crypto.encrypt(&v[..], true);
-
-        match res {
+        let md_ciphertext = match crypto.encrypt(&v[..], true) {
             Err(e) => return make_err(&format!("Encryption error: {:?}", e)),
-            Ok(d) => {
-                let b64_out = d[..].to_base64(STANDARD);
-                match writeln!(fout, "{}", b64_out) {
-                    Err(e) => return make_err(&format!("Failed to write metadata: {}", e)),
-                    Ok(_) => ()
-                }
+            Ok(d) => d
+        };
+                
+        {
+            let b64_out = md_ciphertext[..].to_base64(STANDARD);
+            match writeln!(out, "{}", b64_out) {
+                Err(e) => return make_err(&format!("Failed to write metadata: {}", e)),
+                Ok(_) => ()
             }
         }
-
-        Ok((outname.to_owned(),fout,iv,key))
+        
+        // write an hmac for zero-length ciphertext data, will update later if data is attached
+        let dummy_data:[u8;0] = [0;0];
+        let mut hmac = crypto_util::get_hmac(&key, &dummy_data);
+        try!(writeln!(out, "{}", crypto_util::hmac_to_vec(&mut hmac).to_base64(STANDARD)));
+        
+        Ok(())
     }
 
     // TODO: should make this pure, return a new syncfile
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
         self.set_deleted();
-        let (outname,_,_,_) = match self.write_syncfile_header(conf,override_path) {
+        let (iv,key) = try!(self.get_iv_and_key(conf));
+        
+        let (sid,outname,mut fout) = try!(self.open_output_syncfile(conf,override_path));
+        
+        let mut temp:Vec<u8> = Vec::new();
+                
+        match self.write_syncfile_header(conf,&sid,key,iv,&mut temp) {
             Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
         };
+        
+        // TODO: recompute hmacs
+        
+        try!(fout.write_all(&temp));
+        
         Ok(outname)
     }
     
     fn save<T: Read>(&self, conf:&config::SyncConfig, input_data: &mut BufReader<T>, override_path: Option<PathBuf>) -> Result<String> {
-        let (outname,fout,iv,key) = match self.write_syncfile_header(conf,override_path) {
+        // use two HMACs.  The first covers the header lines and metadata, and is the first line of the file.
+        // the second covers the ciphertext and is in the header lines.
+        
+        // write the header lines to a temporary buffer, use a temporary value for the ciphertext hmac.  
+        // use the size of the buffer to reserve space for the header by seeking to that position in the file.  
+        // write the ciphertext and compute its hmac.  
+        // update the ciphertext hmac in the header, compute the header hmac,
+        // and write it out to the beginning of the file.
+        let (iv,key) = try!(self.get_iv_and_key(conf));
+        let (sid,outname,mut fout) = try!(self.open_output_syncfile(conf,override_path));
+        
+        let mut headerbuf:Vec<u8> = Vec::new();
+        
+        match self.write_syncfile_header(conf,&sid,key,iv,&mut headerbuf) {
             Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
-            Ok(stuff) => stuff
+            Ok(_) => ()
         };
-        let mut fout = fout;
+        
+        //try!(fout.seek(SeekFrom::Start(header_hmac.len() as u64)));
+        // write dummy hmac and header to file to set file position for cipher data
+        let d = get_dummy_hmac();
+        try!(writeln!(fout, "{}", d));
+        try!(fout.write_all(&headerbuf));
+        
+        let orig_header_end = try!(fout.seek(SeekFrom::Current(0)));
 
         // remake crypto helper for file data
         let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
@@ -653,6 +733,42 @@ impl SyncFile {
                 Ok(d) => try!(fout.write_all(&d))
             }
         }
+        
+        // update the ciphertext hmac at the end of the header lines
+        let headerbuf = {           
+            // this is kinda bizarre...I was fighting the iterator api and lost.
+            let header_str = String::from_utf8(headerbuf.clone()).unwrap();
+            let to_take = header_str.lines().count() - 1;
+            let lines = header_str.lines().take(to_take);
+            let orig_len = headerbuf.len();
+            
+            let mut headerbuf:Vec<u8> = Vec::new();
+            let lines: Vec<&str> = lines.collect();
+            for l in &lines {
+                try!(writeln!(headerbuf, "{}", l));
+            } 
+            try!(writeln!(headerbuf, "{}", crypto_util::hmac_to_vec(&mut crypto.encrypt_hmac).to_base64(STANDARD)));
+            
+            assert!(headerbuf.len() == orig_len, format!("Mismatched header len: orig: {}, new: {}", orig_len, headerbuf.len()));
+             
+            headerbuf
+        };
+        
+        let header_hmac = crypto_util::hmac_to_vec(&mut crypto_util::get_hmac(&key, &headerbuf)).to_base64(STANDARD);
+        // rewrite header fo file
+        try!(fout.seek(SeekFrom::Start(0)));
+        try!(writeln!(fout, "{}", header_hmac));
+        try!(fout.write_all(&headerbuf));
+        
+        let header_end = try!(fout.seek(SeekFrom::Current(0)));
+        assert!(header_end == orig_header_end, format!("Mismatched header len: orig: {}, new: {}", header_end, orig_header_end));
+        
+        //println!("dummy_hmac:  {}", dummy_hmac);        
+        //println!("header_hmac: {}", header_hmac.to_base64(STANDARD));
+        //println!("ct hmac: {}", crypto_util::hmac_to_vec(&mut crypto.encrypt_hmac).to_base64(STANDARD));
+                
+        
+                
 
         Ok(outname.to_owned())            
     }
@@ -721,7 +837,7 @@ mod tests {
         };
         let sfpath = PathBuf::from(&sfpath);
 
-        let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&sfpath) {
+        let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&conf,&sfpath) {
             Err(e) => panic!("Error {:?}", e),
             Ok(id) => id
         };

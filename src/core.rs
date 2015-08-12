@@ -540,7 +540,7 @@ pub fn find_all_syncfiles(state:&SyncState) -> HashMap<String,Vec<String>> {
 
             // have to read at least the first line to get the syncid.  can't trust the
             // filename because it could have been renamed.
-            let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&pb) {
+            let file_syncid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&pb) {
                 Err(e) => panic!("Error {:?}", e),
                 Ok(id) => id
             };
@@ -973,7 +973,7 @@ pub fn do_sync(state:&mut SyncState) {
 
     for sf in &sync_files {
         let syncfile = PathBuf::from(sf);
-        let sid = match syncfile::SyncFile::get_syncid_from_file(&syncfile) {
+        let sid = match syncfile::SyncFile::get_syncid_from_file(&state.conf,&syncfile) {
             Err(e) => panic!("Can't get syncid from file: {}", e),
             Ok(sid) => sid
         };
