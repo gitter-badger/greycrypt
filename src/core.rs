@@ -827,6 +827,7 @@ fn is_ignored(f:&str) -> bool {
     let global_ignore = vec![
         glob::Pattern::new("**/.DS_Store").unwrap(), // for a fun time click here: https://github.com/search?utf8=%E2%9C%93&q=.DS_Store&ref=simplesearch
         glob::Pattern::new("**/Thumbs.db").unwrap(), // windows turd
+        glob::Pattern::new("**/.gc_tmp").unwrap(), // greycrypt turd
         ];
     for pat in &global_ignore {
         if pat.matches(f) {

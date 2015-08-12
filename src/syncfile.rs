@@ -11,7 +11,7 @@ use crypto_util::IV_SIZE;
 use std::str::FromStr;
 use std::collections::HashMap;
 use std::path::{PathBuf};
-use std::fs::{File,create_dir_all};
+use std::fs::{File,create_dir_all,rename,remove_file};
 use std::fs::{PathExt};
 use std::io::{Read, Write, BufReader, BufRead, SeekFrom, Seek, Result, Cursor};
 use std::io;
@@ -36,6 +36,7 @@ pub struct SyncFile {
     pub relpath: String,
     pub revguid: uuid::Uuid,
     pub nativefile: String,
+    pub cipher_hmac: String,
     pub is_binary: bool,
     pub is_deleted: bool,
     sync_file_state: SyncFileState
@@ -45,6 +46,22 @@ fn get_dummy_hmac() -> String {
     let dummy_hmac:[u8;32] = [0;32];
     let dummy_hmac = dummy_hmac.to_base64(STANDARD);
     dummy_hmac    
+}
+
+pub struct TempFileRemover {
+    pub filename: String
+} 
+
+impl Drop for TempFileRemover {
+    fn drop(&mut self) {
+        let pb = PathBuf::from(&self.filename);
+        if pb.is_file() {
+            match remove_file(&self.filename) {
+                Err(e) => warn!("Failed to remove temporary file: {}: {}", &self.filename, e),
+                Ok(_) => ()
+            }
+        }
+    }
 }
 
 impl SyncFile {
@@ -86,6 +103,7 @@ impl SyncFile {
             relpath: self.relpath.clone(),
             revguid: uuid::Uuid::new_v4(),
             nativefile: self.nativefile.to_owned(),
+            cipher_hmac: self.cipher_hmac.to_owned(),
             is_binary: self.is_binary,
             is_deleted: true,
             sync_file_state: SyncFileState::Closed
@@ -114,6 +132,7 @@ impl SyncFile {
             relpath: relpath,
             revguid: uuid::Uuid::new_v4(),
             nativefile: nativefile.to_owned(),
+            cipher_hmac: get_dummy_hmac(),
             is_binary: is_binary,
             is_deleted: false,
             sync_file_state: SyncFileState::Closed
@@ -208,7 +227,7 @@ impl SyncFile {
         Ok((lines[1].to_owned(), lines[2].to_owned(), lines[3].to_owned(), lines[4].to_owned()))
     }
 
-    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>)> {
+    fn init_sync_read(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<(File,String,[u8;IV_SIZE],HashMap<String,String>,String)> {
         let key = match conf.encryption_key {
             None => return make_err(&"No encryption key".to_owned()),
             Some(k) => k
@@ -310,11 +329,11 @@ impl SyncFile {
             iv_copy[i] = iv[i]
         }
 
-        Ok((fin,syncid.to_owned(),iv_copy,mdmap))
+        Ok((fin,syncid.to_owned(),iv_copy,mdmap,cipher_hmac.to_owned()))
     }
 
     pub fn get_metadata_hash(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<HashMap<String,String>> {
-        let (_,_,_,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
+        let (_,_,_,mdmap,_) = match SyncFile::init_sync_read(conf,syncpath) {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
         };
@@ -322,7 +341,7 @@ impl SyncFile {
     }
 
     pub fn from_syncfile(conf:&config::SyncConfig, syncpath:&PathBuf) -> Result<SyncFile> {
-        let (fin,_,iv,mdmap) = match SyncFile::init_sync_read(conf,syncpath) {
+        let (fin,_,iv,mdmap,cipher_hmac) = match SyncFile::init_sync_read(conf,syncpath) {
             Err(e) => return Err(e),
             Ok(stuff) => stuff
         };
@@ -393,6 +412,7 @@ impl SyncFile {
             relpath: relpath,
             revguid: revguid,
             nativefile: "".to_owned(),
+            cipher_hmac: cipher_hmac,
             is_binary: is_binary,
             is_deleted: is_deleted,
             sync_file_state: SyncFileState::Open(ofs)
@@ -492,11 +512,24 @@ impl SyncFile {
                     }
                 }
             }
+            
+            // verify hmac
+            let hmac_bytes = match self.cipher_hmac.from_base64() {
+                Err(e) => return make_err(&format!("Failed to extract data hmac: error {:?}", e)),
+                Ok(d) => d        
+            };
+            
+            let mut computed_hmac = crypto.decrypt_hmac;
+            let expected_hmac = MacResult::new(&hmac_bytes); 
+            
+            if computed_hmac.result() != expected_hmac {
+                return make_err(&format!("Data hmac does not equal expected value"));
+            }             
         }
-
+        
         // close input file now
-        self.close();
-
+        self.close();        
+        
         Ok(())
     }
 
@@ -538,8 +571,8 @@ impl SyncFile {
             s => s
         };
 
-        let outpath_par = PathBuf::from(&outpath);
-        let outpath_par = outpath_par.parent().unwrap();
+        let outpath_pb = PathBuf::from(&outpath);
+        let outpath_par = outpath_pb.parent().unwrap();
         if !outpath_par.is_dir() {
             let res = create_dir_all(&outpath_par);
             match res {
@@ -548,17 +581,27 @@ impl SyncFile {
             }
         }
 
-        // prep output handles
-        let res = File::create(outpath);
-        let mut fout = match res {
-            Err(e) => return make_err(&format!("Failed to create output file: {:?}: {:?}", outpath, e)),
-            Ok(f) => f
-        };
-
-        match self.decrypt_to_writer(conf,&mut fout) {
-            Err(e) => return make_err(&format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
-            Ok(_) => ()
+        // write output file. 
+        // since we have to verify the hmac, can't write directly to the file.  write to a temporary
+        // file, then move it over the target path if the decryption & hmac check succeed.        
+        let tmp_outpath = format!("{}.gc_tmp", outpath); // this is actually easier than trying to use PathBuf to append the extension
+        let remover = TempFileRemover { filename: tmp_outpath.to_owned() };
+        let _ = remover; // silence warning
+        {
+            let res = File::create(&tmp_outpath);
+            let mut fout = match res {
+                Err(e) => return make_err(&format!("Failed to create output file: {:?}: {:?}", tmp_outpath, e)),
+                Ok(f) => f
+            };
+    
+            match self.decrypt_to_writer(conf,&mut fout) {
+                Err(e) => return make_err(&format!("Failed to decrypt file: {:?}: {:?}", outpath, e)),
+                Ok(_) => ()
+            }
         }
+        
+        // succeeded, move file over
+        try!(rename(tmp_outpath, outpath));
 
         Ok(outpath.to_owned())
     }
@@ -679,12 +722,12 @@ impl SyncFile {
             Ok(_) => ()
         };
         
-        //try!(fout.seek(SeekFrom::Start(header_hmac.len() as u64)));
         // write dummy hmac and header to file to set file position for cipher data
         let d = get_dummy_hmac();
         try!(writeln!(fout, "{}", d));
         try!(fout.write_all(&headerbuf));
-        
+
+        // get current file position for verification later        
         let orig_header_end = try!(fout.seek(SeekFrom::Current(0)));
 
         // remake crypto helper for file data
@@ -762,13 +805,6 @@ impl SyncFile {
         
         let header_end = try!(fout.seek(SeekFrom::Current(0)));
         assert!(header_end == orig_header_end, format!("Mismatched header len: orig: {}, new: {}", header_end, orig_header_end));
-        
-        //println!("dummy_hmac:  {}", dummy_hmac);        
-        //println!("header_hmac: {}", header_hmac.to_base64(STANDARD));
-        //println!("ct hmac: {}", crypto_util::hmac_to_vec(&mut crypto.encrypt_hmac).to_base64(STANDARD));
-                
-        
-                
 
         Ok(outname.to_owned())            
     }

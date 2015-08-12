@@ -117,11 +117,13 @@ impl CryptoHelper {
             self.got_eof_on_decrypt = true;
         }
 
+        self.decrypt_hmac.input(encrypted_data);
+        
         let mut final_result = Vec::<u8>::new();
         let mut read_buffer = buffer::RefReadBuffer::new(encrypted_data);
         let mut buffer = [0; 4096];
         let mut write_buffer = buffer::RefWriteBuffer::new(&mut buffer);
-
+        
         loop {
             let result = try!(self.decryptor.decrypt(&mut read_buffer, &mut write_buffer, is_all_data));
             final_result.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i| i));
@@ -130,8 +132,6 @@ impl CryptoHelper {
                 BufferResult::BufferOverflow => { }
             }
         }
-        
-        self.decrypt_hmac.input(&final_result);
 
         Ok(final_result)
     }
