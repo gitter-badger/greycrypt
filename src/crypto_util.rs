@@ -15,8 +15,12 @@ pub const IV_SIZE: usize = 16;
 pub struct CryptoHelper {
     encryptor: Box<crypto::symmetriccipher::Encryptor>,
     got_eof_on_encrypt: bool,
+    pub encrypt_hmac: Hmac<Sha256>, 
+    
     decryptor: Box<crypto::symmetriccipher::Decryptor>,
-    got_eof_on_decrypt: bool
+    got_eof_on_decrypt: bool,
+    pub decrypt_hmac: Hmac<Sha256>, 
+    
 }
 
 pub fn hmac_to_vec(hmac: &mut Hmac<Sha256>) -> Vec<u8> {
@@ -71,7 +75,9 @@ impl CryptoHelper {
             encryptor: encryptor,
             decryptor: decryptor,
             got_eof_on_encrypt: false,
-            got_eof_on_decrypt: false
+            got_eof_on_decrypt: false,
+            encrypt_hmac: Hmac::new(Sha256::new(), &key),
+            decrypt_hmac: Hmac::new(Sha256::new(), &key),
         }
     }
 
@@ -98,6 +104,8 @@ impl CryptoHelper {
                 BufferResult::BufferOverflow => { }
             }
         }
+        
+        self.encrypt_hmac.input(&final_result);
 
         Ok(final_result)
     }
@@ -123,6 +131,8 @@ impl CryptoHelper {
                 BufferResult::BufferOverflow => { }
             }
         }
+        
+        self.decrypt_hmac.input(&final_result);
 
         Ok(final_result)
     }
