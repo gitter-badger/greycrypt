@@ -19,12 +19,16 @@ pub struct CryptoHelper {
     got_eof_on_decrypt: bool
 }
 
-pub fn get_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut hmac = Hmac::new(Sha256::new(), &key);
-    hmac.input(data);
+pub fn hmac_to_vec(hmac: &mut Hmac<Sha256>) -> Vec<u8> {
     let mut hmac_raw: Vec<u8> = repeat(0).take(hmac.output_bytes()).collect();
     hmac.raw_result(&mut hmac_raw);
     hmac_raw
+}
+
+pub fn get_hmac(key: &[u8], data: &[u8]) -> Hmac<Sha256> {
+    let mut hmac = Hmac::new(Sha256::new(), &key);
+    hmac.input(data);
+    hmac
 }
 
 pub fn get_iv() -> [u8; IV_SIZE] {
