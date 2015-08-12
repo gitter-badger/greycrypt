@@ -164,7 +164,7 @@ mod tests {
     }
     
     #[test]
-    #[should_panic(expected="are you using the correct password")]
+    #[should_panic(expected="incorrect password")]
     fn change_password_old_fails() {
         let (ref mut alice_mconf, _) = basic_alice_bob_setup("commands_change_password_old_fails");
         

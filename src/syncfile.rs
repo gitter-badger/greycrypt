@@ -203,7 +203,7 @@ impl SyncFile {
         let expected_hmac = MacResult::new(&hmac_bytes); 
         
         if computed_hmac.result() != expected_hmac {
-            make_err(&format!("Header hmac does not equal expected value"))
+            make_err(&format!("Header hmac does not equal expected value; likely incorrect password, possible bug, or file modified by unauthorized agent"))
         } else {
             Ok(())
         }

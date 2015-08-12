@@ -1089,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected="are you using the correct password")]
+    #[should_panic(expected="incorrect password")]
     fn wrong_encryption_key() {
         // run a sync on alice, then try to run a sync on bob with different encryption key.  should panic.
         let (ref mut alice_mconf, ref mut bob_mconf) = basic_alice_bob_setup("wrong_encryption_key");
