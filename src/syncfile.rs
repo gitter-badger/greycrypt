@@ -696,8 +696,11 @@ impl SyncFile {
             Ok(stuff) => stuff
         };
         
-        // TODO: recompute hmacs
-        
+        // compute hmac
+        let header_hmac = crypto_util::hmac_to_vec(&mut crypto_util::get_hmac(&key, &temp)).to_base64(STANDARD);
+        // rewrite header fo file
+        try!(fout.seek(SeekFrom::Start(0)));
+        try!(writeln!(fout, "{}", header_hmac));
         try!(fout.write_all(&temp));
         
         Ok(outname)
