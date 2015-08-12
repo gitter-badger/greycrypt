@@ -70,20 +70,12 @@ impl SyncFileCache {
     }
 }
 
-#[derive(Debug,Clone)]
-pub enum TerminateReason {
-    None,
-    Ok,
-    Conflict(String)
-}
-
 pub struct SyncState {
     pub conf: config::SyncConfig,
     pub syncdb: syncdb::SyncDb,
     pub sync_files_for_id: HashMap<String,Vec<String>>,
     pub sync_file_cache: SyncFileCache,
-    pub log_util: logging::LoggerUtil,
-    pub terminate_reason: TerminateReason
+    pub log_util: logging::LoggerUtil
 }
 
 impl SyncState {
@@ -93,18 +85,8 @@ impl SyncState {
             conf: conf,
             sync_files_for_id: HashMap::new(),
             sync_file_cache: SyncFileCache::new(),
-            log_util: log_util,
-            terminate_reason: TerminateReason::None
+            log_util: log_util
         }
-    }
-
-    // TODO: I'd prefer to take a mut state here and assign the terminate reason, but that
-    // causes nasty wars with the borrow checker
-    // (since state is usually borrowed already as mut).  There is probably a better way to fix it.
-    // This function is only here for the unit tests anyway, so that they can verify that
-    // the code is panicking for the right reason.
-    pub fn terminate(reason: &TerminateReason) -> ! {
-        panic!("Abnormal termination: {:?}", reason);
     }
 
     pub fn is_conflicted(&self,sid:&str) -> bool {
@@ -163,8 +145,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
             (true,true) => {
                 // conflict
                 let msg = format!("Conflict on {:?}/{:?}; remote deleted, but file updated locally", nativefile_str, sd.syncfile.file_name().unwrap());
-                state.terminate_reason = TerminateReason::Conflict(msg);
-                SyncState::terminate(&state.terminate_reason);
+                panic!(msg);
             },
             (true,false) => {
                 // ok to remove
@@ -185,8 +166,7 @@ fn compare_sync_state(state:&mut SyncState,sd:&SyncData) -> SyncAction {
                 // conflict! for now, panic
                 let msg = format!("Conflict on {:?}/{:?}; both and remote and local files were updated", nativefile_str,
                     sd.syncfile.file_name().unwrap());
-                state.terminate_reason = TerminateReason::Conflict(msg);
-                SyncState::terminate(&state.terminate_reason);
+                panic!(msg);
             },
             (true,false) => {
                 SyncAction::UpdateNativeFile(sd.clone())
@@ -901,8 +881,6 @@ fn filter_syncfiles(state:&mut SyncState) -> Vec<String> {
 }
 
 pub fn do_sync(state:&mut SyncState) {
-    state.terminate_reason = TerminateReason::None;
-
     state.sync_file_cache.flush();
 
     dedup_syncfiles(state);
@@ -1048,8 +1026,6 @@ pub fn do_sync(state:&mut SyncState) {
             _ => error!("Leftover action in list: {:?} for {:?}", action, sid)
         }
     }
-
-    state.terminate_reason = TerminateReason::Ok;
 }
 
 #[cfg(test)]
