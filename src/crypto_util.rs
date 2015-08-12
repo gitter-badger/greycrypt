@@ -20,7 +20,6 @@ pub struct CryptoHelper {
     decryptor: Box<crypto::symmetriccipher::Decryptor>,
     got_eof_on_decrypt: bool,
     pub decrypt_hmac: Hmac<Sha256>, 
-    
 }
 
 pub fn hmac_to_vec(hmac: &mut Hmac<Sha256>) -> Vec<u8> {
