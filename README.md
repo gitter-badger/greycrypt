@@ -5,7 +5,8 @@ You specify a configuration file containing directories or files that you want
 to sync, as well as the path to your local cloud storage directory.  After 
 starting, Greycrypt prompts for an encryption password, and then copies 
 encrypted versions of those files to the cloud storage directory.  You can 
-then unpack the files on another machine by running an instance there.
+then unpack the files on another machine by running an instance of your 
+cloud sync program and GreyCrypt.
 
 Licensed under the MIT license.
 
@@ -68,7 +69,7 @@ See "config.sample.toml" for information on how to set up a file.
 ### Storage
 
 In addition to your cloud provider directory, grey crypt stores 
-sync state data in "~/.greycrypt" (Mac), and in "%appdata%\GreyCrypt"
+sync state data in "~/.greycrypt" (Mac), or in "%appdata%\GreyCrypt"
 (Windows).  No unencrypted file data or other identifying information 
 is stored here.
 
@@ -81,10 +82,10 @@ events, so it is less efficient in CPU than it could be.
 * It has not been tested with all cloud providers.  I have tested it with 
 Google Drive and (to a lesser extent) Dropbox.
 * It does not work on Linux, mainly because I have not decided how to deal
-with its case-sensitive filesystem - greycrypt prefers case-insensitive
+with its case-sensitive filesystem - GreyCrypt prefers case-insensitive
 mode.  I welcome PRs that address this.
 * I am not a crypto expert, so some parts of the implementation may be 
-insecure.  I welcome an audit or suggests from a trained crypto engineer.
+insecure.  I welcome an audit or suggestions from a trained crypto engineer.
 * GreyCrypt can remove files; if you remove a file in a synced directory,
 other systems that are syncing that file will remove it as well.
 GreyCrypt uses the system trash/recycling bin, but its important to 
