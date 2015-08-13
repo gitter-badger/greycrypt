@@ -667,7 +667,6 @@ impl SyncFile {
         Ok(())
     }
 
-    // TODO: should make this pure, return a new syncfile
     pub fn mark_deleted_and_save(&mut self, conf:&config::SyncConfig, override_path: Option<PathBuf>) -> Result<String> {
         self.set_deleted();
         let (iv,key) = try!(self.get_iv_and_key(conf));
