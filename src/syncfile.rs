@@ -273,29 +273,15 @@ impl SyncFile {
         };
 
         let md = match crypto.decrypt(&md,true) {
-            Err(e) => return make_err(&format!("Failed to decrypt meta data; are you using the correct password? Error: {:?}", e)),
+            Err(e) => return make_err(&format!("Failed to decrypt meta data; Error: {:?}", e)),
             Ok(md) => md
-        };
-        
-        // decryption can fail without error if the key is wrong, in which case the metadata will be garbage.
-        // use the marker to do a secondary check for failure.
-        // TODO: maybe merge version into marker
-        // TODO2: this is probably redundant now that I have the hmac?
-        let marker_bytes = "DEADBEEF".as_bytes();
-        const MARKER_SIZE:usize = 8;
-        let mut input_marker:[u8;MARKER_SIZE] = [0;MARKER_SIZE];
-        for i in 0..MARKER_SIZE {
-            input_marker[i] = md[i];
-        }
-        if marker_bytes != input_marker {
-            return make_err(&format!("Failed to read metadata marker; are you using the correct password?"));
-        } 
+        }; 
         
         let md = match String::from_utf8(md) {
             Err(e) => return make_err(&format!("Failed to unpack utf8 metadata string: {:?}", e)),
             Ok(md) => md
         };
-        let md:Vec<&str> = md.lines().skip(1).collect(); // drop marker line
+        let md:Vec<&str> = md.lines().collect();
 
         // first line should be version, check that
         {
@@ -444,7 +430,6 @@ impl SyncFile {
 
     fn pack_metadata(&self, conf:&config::SyncConfig, v:&mut Vec<u8>) -> io::Result<()> {
         let md_format_ver = 1;
-        try!(writeln!(v, "DEADBEEF"));
         try!(writeln!(v, "ver: {}", md_format_ver));
         try!(writeln!(v, "kw: {}", self.keyword));
         try!(writeln!(v, "relpath: {}", self.relpath));
