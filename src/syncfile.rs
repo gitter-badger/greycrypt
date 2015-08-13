@@ -183,11 +183,11 @@ impl SyncFile {
             Ok(fin) => fin
         };
 
-        let (syncid,_,_,_) = try!(SyncFile::read_and_verify_header(&fin, key));
+        let (syncid,_,_,_) = try!(SyncFile::read_and_verify_header(&fin, &key));
         Ok(syncid)
     }
     
-    fn verify_header_hmac(key: [u8;config::KEY_SIZE], header_hmac:&str, header_lines:&Vec<&String>) -> Result<()> {
+    fn verify_header_hmac(key: &[u8;config::KEY_SIZE], header_hmac:&str, header_lines:&Vec<&String>) -> Result<()> {
         // dump the lines into a buffer and verify the hmac
         let mut buf:Vec<u8> = Vec::new();
         for l in header_lines {
@@ -199,7 +199,7 @@ impl SyncFile {
             Ok(d) => d        
         };
         
-        let mut computed_hmac = crypto_util::get_hmac(&key, &buf);
+        let mut computed_hmac = crypto_util::get_hmac(key, &buf);
         let expected_hmac = MacResult::new(&hmac_bytes); 
         
         if computed_hmac.result() != expected_hmac {
@@ -211,7 +211,7 @@ impl SyncFile {
     
     // Returns header lines:
     // (syncid,ivline,mdline,cipher_hmac)
-    fn read_and_verify_header(fin:&File, key: [u8;config::KEY_SIZE]) -> 
+    fn read_and_verify_header(fin:&File, key: &[u8;config::KEY_SIZE]) -> 
         Result<(String,String,String,String)> {
         let lines = try!( SyncFile::read_top_lines(&fin,5) );
         let header_hmac = lines[0].clone();
@@ -248,7 +248,7 @@ impl SyncFile {
             Ok(fin) => fin
         };
         
-        let (syncid,ivline,mdline,cipher_hmac) = match SyncFile::read_and_verify_header(&fin, key) {
+        let (syncid,ivline,mdline,cipher_hmac) = match SyncFile::read_and_verify_header(&fin, &key) {
             Err(e) => return make_err(&format!("Can't open syncfile: {:?}: {}", syncpath, e)),
             Ok(stuff) => stuff
         };
@@ -632,9 +632,9 @@ impl SyncFile {
         Ok((iv,key))
     }
         
-    fn write_syncfile_header<T: Write>(&self, conf:&config::SyncConfig, sid:&str, key: [u8;config::KEY_SIZE], iv: [u8;IV_SIZE], out: &mut T) -> Result<(())> {
+    fn write_syncfile_header<T: Write>(&self, conf:&config::SyncConfig, sid:&str, key: &[u8;config::KEY_SIZE], iv: &[u8;IV_SIZE], out: &mut T) -> Result<(())> {
         // make crypto helper
-        let mut crypto = crypto_util::CryptoHelper::new(&key,&iv);
+        let mut crypto = crypto_util::CryptoHelper::new(key,iv);
 
         // write sync id to file (unencrypted)
         try!(writeln!(out, "{}", sid));
@@ -661,7 +661,7 @@ impl SyncFile {
         
         // write an hmac for zero-length ciphertext data, will update later if data is attached
         let dummy_data:[u8;0] = [0;0];
-        let mut hmac = crypto_util::get_hmac(&key, &dummy_data);
+        let mut hmac = crypto_util::get_hmac(key, &dummy_data);
         try!(writeln!(out, "{}", crypto_util::hmac_to_vec(&mut hmac).to_base64(STANDARD)));
         
         Ok(())
@@ -676,7 +676,7 @@ impl SyncFile {
         
         let mut temp:Vec<u8> = Vec::new();
                 
-        match self.write_syncfile_header(conf,&sid,key,iv,&mut temp) {
+        match self.write_syncfile_header(conf,&sid,&key,&iv,&mut temp) {
             Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(stuff) => stuff
         };
@@ -705,7 +705,7 @@ impl SyncFile {
         
         let mut headerbuf:Vec<u8> = Vec::new();
         
-        match self.write_syncfile_header(conf,&sid,key,iv,&mut headerbuf) {
+        match self.write_syncfile_header(conf,&sid,&key,&iv,&mut headerbuf) {
             Err(e) => return make_err(&format!("Failed to write syncfile header: {}", e)),
             Ok(_) => ()
         };
