@@ -691,14 +691,17 @@ impl SyncFile {
     }
     
     fn save<T: Read>(&self, conf:&config::SyncConfig, input_data: &mut BufReader<T>, override_path: Option<PathBuf>) -> Result<String> {
+        // save n lines of base64-encoded headers followed by the binary ciphertext. 
         // use two HMACs.  The first covers the header lines and metadata, and is the first line of the file.
-        // the second covers the ciphertext and is in the header lines.
+        // the second covers the ciphertext and is the last header line.
         
         // write the header lines to a temporary buffer, use a temporary value for the ciphertext hmac.  
-        // use the size of the buffer to reserve space for the header by seeking to that position in the file.  
+        // write the temp header to the file to reserve space for the final header.  
         // write the ciphertext and compute its hmac.  
-        // update the ciphertext hmac in the header, compute the header hmac,
-        // and write it out to the beginning of the file.
+        // update the ciphertext hmac in the header buffer, compute the header hmac,
+        // and write the final header to the beginning of the file.
+        // this is a bit of hoop-jumping, but it lets us have all the data in a single file 
+        // and only do IO on the ciphertext once.
         let (iv,key) = try!(self.get_iv_and_key(conf));
         let (sid,outname,mut fout) = try!(self.open_output_syncfile(conf,override_path));
         
@@ -785,7 +788,7 @@ impl SyncFile {
         };
         
         let header_hmac = crypto_util::hmac_to_vec(&mut crypto_util::get_hmac(&key, &headerbuf)).to_base64(STANDARD);
-        // rewrite header fo file
+        // rewrite header to file
         try!(fout.seek(SeekFrom::Start(0)));
         try!(writeln!(fout, "{}", header_hmac));
         try!(fout.write_all(&headerbuf));
