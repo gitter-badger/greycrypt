@@ -38,7 +38,11 @@ pub fn get_iv() -> [u8; IV_SIZE] {
     // Use a combination of OsRng and 
     // Isaac to fill the IV in case the OS rng has been backdoored 
     // (I'm looking at you, CryptGenRandom)
-    // ...this is probably needlessly paranoid, but hopefully not insecure  // TODO: needs crypto review
+    // ...this is probably needlessly paranoid, but hopefully not insecure  
+    // TODO: needs crypto review; seed issac with (partially) Non-CSPRNG?
+    // another interesting reference:
+    // https://github.com/cathalgarvey/lamport_signatures/blob/c884eebc95eb88c619fbb415fb562b93b3e7ad4c/fallback_RNG.py#L73
+    
     let mut issac_rng = Isaac64Rng::new_unseeded();
     let mut os_rng = OsRng::new().ok().unwrap();
     
