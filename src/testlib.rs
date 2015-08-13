@@ -27,7 +27,6 @@ pub mod util {
 
     pub fn clear_test_syncdb(conf:&config::SyncConfig) {
         // if the previous test sync db exists, clear it out
-        // TODO: should break this out into test lib function for reuse
         let wd = env::current_dir().unwrap();
         let sdb_path = conf.syncdb_dir.clone().unwrap();
         let sdb_path = PathBuf::from(sdb_path);

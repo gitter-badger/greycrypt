@@ -742,8 +742,7 @@ pub fn dedup_syncfiles(state:&mut SyncState) {
 
             let mut dup_cand_idx = 0;
             let mut deduped = files.clone();
-            // TODO: figure out how to do this with all the nasty copying, while
-            // keeping BC happy
+            // TODO: would be nice to do this with all the nasty copying
             let mut curr_revguid_removed = false;
             while dup_cand_idx < deduped.len() {
                 // println!("checking dups for: idx: {}: {}", dup_cand_idx, rem_sync_dir_prefix(&deduped[dup_cand_idx]));

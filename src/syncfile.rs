@@ -191,7 +191,7 @@ impl SyncFile {
         // dump the lines into a buffer and verify the hmac
         let mut buf:Vec<u8> = Vec::new();
         for l in header_lines {
-            try!(writeln!(buf, "{}", l)); // TODO header newline
+            try!(writeln!(buf, "{}", l)); 
         }
         
         let hmac_bytes = match header_hmac.from_base64() {
