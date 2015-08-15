@@ -73,10 +73,45 @@ sync state data in "~/.greycrypt" (Mac), or in "%appdata%\GreyCrypt"
 (Windows).  No unencrypted file data or other identifying information 
 is stored here.
 
+### Application Lock Files
+
+Some applications write temporary lock files to storage when a 
+document is open for editing; these are to prevent multiple
+instances of the application from opening the same file.  
+There are two forms of this: the first uses exclusive write
+locks so that no other process can write to the lock file; 
+the second allows writes, and just puts information into the 
+lock file indicating who is editing it.
+
+GreyCrypt doesn't have any special knowledge of these files and
+will attempt to sync them.  However, the first form 
+(exclusive lock) will cause sync failures, because it won't be 
+able to write the output file.  If you use a program that 
+produces these lock files with GreyCrypt, it is recommended that
+you add the lock file to the ignore list (TODO: doc how).  You'll
+then need to be careful that you don't overwrite the file from
+two different machines with different data. 
+
+The second form of lock is handled adequately by GreyCrypt.  
+OpenOffice/LibreOffice is an example that uses this kind of lock file.
+
+### Resolving conflicts
+
+Occasionally a sync will produce conflicts; usually this is when 
+a file with the same name and keyword mapping, but different contents,
+is synced from two different computers.  
+
+Right now you must resolve 
+these manually.  Run greycrypt with the "-x" option, which will show
+you a list of the conflicting files; remove one of the conflicting sync
+files to remove the conflict.  You may need to remove or rename the
+source local file on one machine to keep the conflict from recurring.
+
 ### Caveats and Limitations
 
 * This is alpha software and it is my first Rust program.  Its also not a 
-backup program; keep backups independent of greycrypt files.
+backup program; keep backups independent of greycrypt files.  However,
+I do use it with my own files.
 * It uses filesystem polling (default 3 seconds), rather than 
 events, so it is less efficient in CPU than it could be.
 * It has not been tested with all cloud providers.  I have tested it with 
