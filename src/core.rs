@@ -424,7 +424,7 @@ fn process_native_delete(state:&mut SyncState,sd:&SyncData) -> SyncAction {
     // If a file is deleted, they should remove/recycle the native file.  Unfortunately, with this method,
     // there is no way to know when everybody has processed the delete, so we have to leave the
     // sync file out there as a marker indefinitely (we will expunge the encrypted data, so at least
-    // it small).  May want to implement some sort of time based garbage collection option.
+    // it is small).  May want to implement some sort of time based garbage collection option.
     // Or a delete count in the file so the user can see how many systems processed the delete in some
     // kind of control panel.
     let mut sf = match syncfile::SyncFile::from_syncfile(&state.conf,&sd.syncfile) {
@@ -580,14 +580,14 @@ fn load_syncfile_or_panic(state:&SyncState,syncpath:&String,data:&mut Vec<u8>) -
 // Given a list of sync files, remove all syncfiles whose _contents_ are a duplicate of the
 // syncfile at the specified index.
 // Anything before the index is considered a non-dup and is not checked.
-// If curr revguid is supplied, the boolean part of the returned tuple be true if a syncfile that
+// If curr revguid is supplied, the boolean part of the returned tuple will be true if a syncfile that
 // was removed contained that revguid.
 // If there are duplicates, the file with the lowest revguid will be preserved.  This is to guarantee
 // consistent removal across all machines for the same set of files.
 // The returned paths contains any elements up to any including the candidate index, followed by
 // any elements that were not dups of the candidate index.
 // Example:
-// A,B,C,D,C,D,E with dup cand index 2 C returns this path list:
+// A,B,C,D,C,D,E with dup cand index 2 (C) returns this path list:
 // A,B,C,D,D,E
 // The "C" in the returned list will be either the first or second C from the input list, depending
 // on which one had the lower revguid.
