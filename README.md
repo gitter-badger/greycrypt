@@ -12,6 +12,8 @@ Licensed under the MIT license.
 
 ### Source Hosting
 
+[![Join the chat at https://gitter.im/jmquigs/greycrypt](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/jmquigs/greycrypt?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 This repository is dual-hosted; I keep "master" in sync on both, other 
 branches may diverge.
 
